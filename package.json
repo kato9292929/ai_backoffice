@@ -1,0 +1,27 @@
+{
+  "name": "ai-backoffice",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI back-office with human-in-the-loop approvals via Stripe Approvals (test-mode reference implementation).",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "seed": "tsx src/seed.ts",
+    "webhook": "tsx src/webhook.ts",
+    "propose": "tsx src/agent/propose.ts",
+    "demo": "tsx src/demo.ts",
+    "audit": "tsx src/audit.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "stripe": "^17.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
