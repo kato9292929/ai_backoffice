@@ -1,0 +1,27 @@
+{
+  "_about": "S3 — qm command-policy rules that pause a money-moving Stripe call for approval while posture stays 'auto'. These are SCOPE/ORG command-policy rules (admin-configured), NOT layer tool-descriptor `approvals`: a layer approval pattern must anchor to its own tool binary (deploy-directory.md 'Tool descriptors'), and the Stripe call runs as a `curl` to the core credential broker, whose binary is core `curl` — a layer may not gate a core binary. So these rules live in the scope's CommandPolicy (src/policy/command-policy.ts), added by an admin.",
+  "_semantics": "CommandRule = { pattern, decision, reason }. `pattern` is a case-insensitive regex matched against the reconstructed full command line (which includes the -d JSON body, so the Stripe URL in the broker payload is visible). Matching is textual only — there is NO numeric comparison operator. Do NOT put amount thresholds here; keep amount conditions on the Stripe approval rule side. These rules gate the PRESENCE of a money-moving Stripe endpoint, and the pause they create is SELF-APPROVED (approver == initiator in qm). The authoritative human!=agent gate is Stripe Approvals; this is only a local speed bump.",
+  "mode": "denylist",
+  "rules": [
+    {
+      "pattern": "api\\.stripe\\.com/v1/refunds",
+      "decision": "require_approval",
+      "reason": "Stripe refund proposed by agent — pauses locally; Stripe Approvals is the authoritative gate"
+    },
+    {
+      "pattern": "api\\.stripe\\.com/v1/invoices\\b",
+      "decision": "require_approval",
+      "reason": "Stripe invoice creation proposed by agent — pauses locally; Stripe Approvals is the authoritative gate"
+    },
+    {
+      "pattern": "\"method\"\\s*:\\s*\"DELETE\"[^}]*api\\.stripe\\.com/v1/subscriptions/",
+      "decision": "require_approval",
+      "reason": "Stripe subscription cancellation proposed by agent — pauses locally; Stripe Approvals is the authoritative gate"
+    }
+  ],
+  "_limitations": [
+    "Shell-only: the policy only sees shell commands run via `execute`/background (src/tools/primitives.ts). A non-shell tool call is not covered.",
+    "Bypassable: SECURITY.md classes command policy as a speed bump — writing the URL to a file, base64, or `curl -d @file` can evade the regex. Not a boundary.",
+    "Self-approved: the qm pause is approved by the initiator (src/slack/approvals.ts:560). It does not provide human!=agent separation; only Stripe does."
+  ]
+}
