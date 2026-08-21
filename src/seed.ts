@@ -208,16 +208,32 @@ export async function runSeed(): Promise<void> {
   // 4) Paid, refundable charges (via confirmed PaymentIntents) ---------------
   for (const ch of CHARGES) {
     const existing = prev?.charges.find((x) => x.handle === ch.handle);
+    // Reuse a seeded charge ONLY if it still exists AND has not been consumed
+    // by a refund. A refunded charge keeps PaymentIntent.status === 'succeeded',
+    // so we must also inspect the charge's refund state and replenish a fresh
+    // one when the previous demo run already refunded it.
     const piOk =
       !!existing &&
       (await stillExists(async () => {
         const pi = await stripe.paymentIntents.retrieve(existing.paymentIntentId);
-        return pi.status === 'succeeded' ? pi : null;
+        if (pi.status !== 'succeeded') return null;
+        const chId =
+          typeof pi.latest_charge === 'string'
+            ? pi.latest_charge
+            : (pi.latest_charge?.id ?? existing.chargeId);
+        if (!chId) return null;
+        const charge = await stripe.charges.retrieve(chId);
+        const consumed =
+          charge.refunded || charge.amount_refunded >= charge.amount;
+        return consumed ? null : pi;
       }));
     if (piOk && existing) {
       manifest.charges.push(existing);
       log.info(`charge reused ${ch.handle} → ${existing.chargeId}`);
       continue;
+    }
+    if (existing) {
+      log.info(`charge ${ch.handle} consumed/missing → replenishing a fresh charge`);
     }
     const pi = await stripe.paymentIntents.create({
       amount: ch.amount,

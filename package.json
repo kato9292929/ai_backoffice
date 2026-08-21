@@ -9,6 +9,7 @@
   },
   "scripts": {
     "seed": "tsx src/seed.ts",
+    "status": "tsx src/status.ts",
     "webhook": "tsx src/webhook.ts",
     "propose": "tsx src/agent/propose.ts",
     "demo": "tsx src/demo.ts",
