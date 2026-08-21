@@ -13,12 +13,13 @@ import type { ApprovalRequestRef } from './types.js';
  *     the EXACT `approval_required` error body, including `error.approval_request`,
  *     which the typed SDK surface does not model as a first-class field.
  *
- *  3. Raw v2 submit (`submitApprovalRequest`) — the preview endpoint
- *     `POST /v2/core/approval_requests/{id}/submit` needs the preview version
- *     header and is not part of the stable typed SDK; we call it directly.
+ *  3. Raw v2 update (`updateApprovalRequest`) — the preview endpoint
+ *     `POST /v2/core/approval_requests/{id}/update` (attaches the justification;
+ *     Stripe auto-submits the request itself) needs the preview version header
+ *     and is not part of the stable typed SDK; we call it directly.
  *
  * NOTE (UNVERIFIED against live Stripe): the precise shape of the
- * `approval_required` error and the submit request/response were coded from
+ * `approval_required` error and the update request/response were coded from
  * Stripe's published Approvals docs, not confirmed against a live agent key in
  * this environment. See docs/VERIFICATION.md. Parsing is defensive so that a
  * shape drift surfaces as a clear error rather than a silent wrong branch.
@@ -121,18 +122,23 @@ export function parseApprovalRequired(
 }
 
 /**
- * Submit an approval request for human review (M3 step 5).
- * `POST /v2/core/approval_requests/{id}/submit` with the preview version header
- * and a `reason` body. Without this call the auto-created approval request is
- * never surfaced to reviewers and lapses in 24h.
+ * Attach the agent's justification to an approval request (M3 step 5).
+ *
+ * Current Stripe docs: when an agent-tagged key hits an approval rule, Stripe
+ * returns `approval_required` AND automatically submits the approval request to
+ * review. There is no separate `/submit` call and no "unsubmitted lapses in 24h"
+ * step in the current docs. To attach the reason the agent calls
+ * `POST /v2/core/approval_requests/{id}/update` with the preview version header
+ * and a `reason` body. (Corrected from the earlier `/submit` + 2026-06-24.preview
+ * spec.)
  */
-export async function submitApprovalRequest(
+export async function updateApprovalRequest(
   approvalRequestId: string,
   reason: string,
 ): Promise<RawResponse> {
   const url = `${STRIPE_API_BASE}/v2/core/approval_requests/${encodeURIComponent(
     approvalRequestId,
-  )}/submit`;
+  )}/update`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {

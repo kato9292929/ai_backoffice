@@ -9,11 +9,13 @@ import type { FinalResult } from './types.js';
  * M4 — receive Approvals webhook events (via `stripe listen`) and reflect the
  * human decision into the audit log.
  *
- * Handled event types:
+ * Handled event types (7, per current Stripe docs):
+ *   v2.core.approval_request.created    (request created & submitted to review)
  *   v2.core.approval_request.approved   (human approved; execution pending)
  *   v2.core.approval_request.succeeded  (Stripe executed the action)
  *   v2.core.approval_request.rejected   (human rejected)
- *   v2.core.approval_request.canceled   (request withdrawn / lapsed)
+ *   v2.core.approval_request.canceled   (request withdrawn)
+ *   v2.core.approval_request.expired    (request lapsed)
  *   v2.core.approval_request.failed     (approved but execution failed)
  *
  * We NEVER re-execute the action here — after approval Stripe runs it itself.
@@ -29,10 +31,12 @@ function classifyEvent(type: string): {
   status: string;
   finalResult: FinalResult | null;
 } {
+  if (type.endsWith('.created')) return { status: 'created', finalResult: null };
   if (type.endsWith('.approved')) return { status: 'approved', finalResult: null };
   if (type.endsWith('.succeeded')) return { status: 'succeeded', finalResult: 'executed' };
   if (type.endsWith('.rejected')) return { status: 'rejected', finalResult: 'rejected' };
-  if (type.endsWith('.canceled')) return { status: 'canceled', finalResult: 'expired' };
+  if (type.endsWith('.canceled')) return { status: 'canceled', finalResult: 'canceled' };
+  if (type.endsWith('.expired')) return { status: 'expired', finalResult: 'expired' };
   if (type.endsWith('.failed')) return { status: 'failed', finalResult: 'failed' };
   return { status: type, finalResult: null };
 }

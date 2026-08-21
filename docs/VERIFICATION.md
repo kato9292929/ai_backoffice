@@ -42,14 +42,19 @@
 - 実装: seed は通常キー（`STRIPE_SECRET_KEY`）、起案は agent キー
   （`STRIPE_AGENT_KEY`）と明確に分離済み。
 
-### 4. `Stripe-Version: 2026-06-24.preview` の `/v2/core/approval_requests/{id}/submit` が公式 SDK でサポートされているか
+### 4. `Stripe-Version: 2026-07-29.preview` の `/v2/core/approval_requests/{id}/update` が公式 SDK でサポートされているか
 
-- 状態: ⚠️ 未確認。**素の HTTP クライアントで叩く方針を採用**（指示書どおり）。
-- 判断: submit は preview バージョン固定のため、安定版 typed SDK に依存せず
-  `fetch` で直接呼ぶ（`submitApprovalRequest()`）。同様に、`approval_required`
+> 訂正（現行ドキュメント）: 旧記述の `/submit` + `2026-06-24.preview` は現行版と異なる。
+> `approval_required` が返ると Stripe が承認要求を**自動でレビューへ提出**する。理由文の
+> 付与は `/submit` ではなく `POST /v2/core/approval_requests/{id}/update`、バージョンヘッダは
+> `2026-07-29.preview`。「未提出は24時間で失効」は現行記述に見当たらない。
+
+- 状態: ⚠️ 未確認。**素の HTTP クライアントで叩く方針を採用**。
+- 判断: update は preview バージョン固定のため、安定版 typed SDK に依存せず
+  `fetch` で直接呼ぶ（`updateApprovalRequest()`）。同様に、`approval_required`
   エラー本文を正確に読むため、起案アクションの v1 呼び出しも素の `fetch`
   （`agentRequest()`）で行う。
-- 確認手順: submit のレスポンス（HTTP ステータス / ボディ）を M3 実行時にログで確認。
+- 確認手順: update のレスポンス（HTTP ステータス / ボディ）を M3 実行時にログで確認。
   preview バージョンが更新された場合は `STRIPE_PREVIEW_VERSION` で差し替え可能。
 
 ### 5. Webhook で `v2.core.*` を受け取れるか（`stripe listen`）

@@ -56,8 +56,9 @@ export const config = {
     return required('STRIPE_WEBHOOK_SECRET');
   },
 
-  /** Preview API version required by the v2 approval endpoints. */
-  previewVersion: optional('STRIPE_PREVIEW_VERSION', '2026-06-24.preview'),
+  /** Preview API version required by the v2 approval endpoints (the
+   * approval_request update endpoint). Per current Stripe docs. */
+  previewVersion: optional('STRIPE_PREVIEW_VERSION', '2026-07-29.preview'),
 
   webhookPort: Number(optional('WEBHOOK_PORT', '4242')),
 

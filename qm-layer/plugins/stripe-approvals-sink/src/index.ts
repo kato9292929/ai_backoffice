@@ -12,9 +12,11 @@ const DATABASE_URL = requiredEnv('DATABASE_URL');
 const pool = new Pool({ connectionString: DATABASE_URL });
 
 const HANDLED = new Set([
+  'v2.core.approval_request.created',
   'v2.core.approval_request.approved',
   'v2.core.approval_request.rejected',
   'v2.core.approval_request.canceled',
+  'v2.core.approval_request.expired',
   'v2.core.approval_request.succeeded',
   'v2.core.approval_request.failed',
 ]);

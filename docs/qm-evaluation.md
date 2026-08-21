@@ -94,7 +94,8 @@ qm は Stripe の agent key を **org スコープの broker credential** とし
 
 - **構成A（推奨）**: Stripe agent-tagged key を **org スコープ broker credential** として保持
   （`keychain.ts:546-566`）。qm posture は `auto`。エージェントは `execute` の `curl` で
-  `POST /v1/refunds` 等を叩く → Stripe が `approval_required` を返す → エージェントが理由文を submit →
+  `POST /v1/refunds` 等を叩く → Stripe が `approval_required` を返し承認要求を自動提出 → エージェントは
+  理由文を `/v2/core/approval_requests/{id}/update`（`2026-07-29.preview`）で後付け →
   **別の人間**が Stripe Dashboard で承認/却下。Stripe から見た起案者は agent key、承認者は Dashboard の
   人間で、qm 内部の `actorId`（人間）とは独立。
 - **構成B（個人帰属が要る場合）**: agent key を per-scope の `VAULT_TOKEN_*` env として個人スコープに置く
@@ -103,10 +104,11 @@ qm は Stripe の agent key を **org スコープの broker credential** とし
 - **構成C（二層）**: qm の command policy に require_approval ルールを足してローカルの速度バンプにしつつ
   （§3）、権威ある分離ゲートは Stripe Approvals に置く。
 
-**未確認（キーとネットワークがある環境で消化）**: Stripe が agent key 経由の submit を「その key の身元」
-として扱うのか「key を作成した人間」として扱うのか。前者なら key 作成者本人でも承認可能、後者なら作成者は
-承認不可。いずれにせよ **Dashboard 承認者を別人にすれば分離は成立**する。これは前マイルストーンの
-B 項目（Stripe ライブ挙動）と同種の持ち越し。
+**（後日ドキュメントで消化）**: Stripe が agent key 経由の起案を「その key の身元」として扱うのか
+「key を作成した人間」として扱うのか、という留保は**現行 Stripe ドキュメントで解決済み**。
+agent-tagged key は**アカウント管理者とは独立した actor** として扱われ、単一メンバーのアカウントでも
+`actor condition = agent-tagged API keys` のルールのみ保存でき、判定は**キーの身元**で行われる。
+→ 1 人法人でも 起案=agent / 承認=人間 の分離が成立する（Dashboard 承認者を別人にする必要すら無い）。
 
 ---
 
@@ -147,7 +149,7 @@ Stripe 呼び出しも同じ: SKILL.md 本文に `curl https://api.stripe.com/..
 | `src/demo.ts`（通しオーケストレーション） | **捨てる** | qm のターン/クロンが代替 |
 
 **qm に載せても捨てずに済む中核資産**: ①Stripe 統合仕様（`approval_required` 形状・v2 submit＋preview
-ヘッダ・5 イベント・invoice 二段・返金/解約の叩き方）②理由文 8 項目フォーマット＋M2 ルール表
+ヘッダ・7 イベント・invoice 二段・返金/解約の叩き方）②理由文 8 項目フォーマット＋M2 ルール表
 ③seed スクリプト ④`rule_not_enforced`（ゲート未効化を成功偽装しない）という安全チェックの考え方。
 
 ---
@@ -268,14 +270,14 @@ org broker credential）。従って推奨は「スクラッチ版をデモの�
 
 ### どちらの道でも捨てずに済む資産
 
-Stripe 統合仕様（approval_required 形状・v2 submit＋preview ヘッダ・5 イベント・invoice 二段・返金/解約）、
+Stripe 統合仕様（approval_required 形状・v2 update＋preview ヘッダ・7 イベント・invoice 二段・返金/解約）、
 理由文 8 項目フォーマット＋M2 ルール表、seed スクリプト、`rule_not_enforced` 安全チェックの考え方。
 これらは CLI でも qm スキルでもそのまま生きる。
 
 ### 6-4. キーとネットワークがある環境に持ち越す項目
 
 1. Stripe が agent key 経由 submit を「key の身元」と扱うか「key 作成者の身元」と扱うか（§1-4 の分離可否に直結）。
-2. `POST /v2/core/approval_requests/{id}/submit`（preview 版）と `approval_required` 本文の実挙動（前マイルストーン B）。
+2. `POST /v2/core/approval_requests/{id}/update`（`2026-07-29.preview`）と `approval_required` 本文の実挙動（旧 `/submit`+`2026-06-24.preview` から訂正。webhook は 7 種）。
 3. qm を実際にモデルキー＋Stripe broker credential＋api.stripe.com への egress ありで end-to-end 起動して確認。
 4. qm の egress は v1 では validated-only（強制ではない, `docs/deploy-directory.md:142`）。Stripe スキルを
    api.stripe.com に固定できるか。

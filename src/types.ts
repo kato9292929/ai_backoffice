@@ -60,6 +60,7 @@ export type FinalResult =
   | 'proposed' // submitted, awaiting human decision
   | 'executed' // approved by human AND succeeded on Stripe
   | 'rejected' // human rejected
+  | 'canceled' // approval request withdrawn/canceled
   | 'expired' // approval request lapsed
   | 'failed' // approved but Stripe execution failed
   | 'auto_executed' // no rule matched; ran without approval (contrast case)

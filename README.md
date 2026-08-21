@@ -18,7 +18,7 @@
 - agent-tagged key で返金・請求書発行・解約を実行しようとすると、Stripe が
   `approval_required` を返し、**実行がブロックされる**。
 - エージェントは根拠（問い合わせID・顧客ID・金額・判断根拠）を含む理由文を生成し、
-  approval request に **submit** する。
+  approval request に **update で後付け（attach）** する（Stripe が自動提出済み）。
 - 人間が Dashboard で承認/却下すると、承認後は **Stripe 側がアクションを自動実行**し、
   結果が `v2.core.approval_request.*` webhook で戻る。
 - 金額に影響しない軽微な操作（メタデータ更新）は承認を挟まず素通りする（対比）。
@@ -39,17 +39,17 @@
         │
         ▼
  Stripe API ──▶ approval_required (error.approval_request)
-        │              ← gated アクションは実行されず承認要求が生成される
+        │       ← gated アクションは実行されず、承認要求が Stripe により自動でレビューへ提出される
         ▼
- POST /v2/core/approval_requests/{id}/submit   （理由文=reason, preview版ヘッダ）
+ POST /v2/core/approval_requests/{id}/update   （理由文=reason, Stripe-Version: 2026-07-29.preview）
         │
         ▼
- Stripe Dashboard > Requests  ── 人間が承認/却下 ──┐
-        │                                          │
-        │ 承認されると Stripe がアクションを自動実行 │
-        ▼                                          ▼
+ Stripe Dashboard > Settings > Approvals > Requests  ── 人間が承認/却下 ──┐
+        │                                                                 │
+        │ 承認されると Stripe がアクションを自動実行                        │
+        ▼                                                                 ▼
  webhook (v2.core.approval_request.*)  ─▶  監査ログ logs/audit.jsonl
-   approved / succeeded / rejected / canceled / failed   （状態遷移を追記）
+   created / approved / succeeded / rejected / canceled / expired / failed （7種、状態遷移を追記）
 ```
 
 - 起案（propose）は **同期的に承認を待たない**。承認待ちは待ち状態として終わる。
@@ -73,11 +73,23 @@ Supported actions を参照）。本デモではそのうち3つを使う:
 
 ## 承認フローの制約（押さえておくこと）
 
-- **未提出は 24 時間で失効**：`approval_required` で自動生成されても、submit
-  しない限りレビュー対象にならず 24h で失効する。→ エージェントは必ず submit する。
-- **提出済みは 14 日で失効**。
-- **自分の起案は自分で承認できない**：起案 agent と承認者は別人格にする。
-- **1アクションにつき有効化できるルールは1つ**。
+> 現行の Stripe ドキュメントに合わせて更新済み。旧仕様（`/submit`・
+> `2026-06-24.preview`・「未提出は24時間で失効」・5イベント）から変更あり。
+
+- **Approvals は preview 機能**。アカウントが `approvals_product_preview` に
+  登録されていないと Settings > Approvals 画面が現れず、gated アクションも
+  素通りする（その場合コードは `rule_not_enforced` を警告）。**preview 申請が前段**。
+- **理由文の付与は `/update`**：`approval_required` が返ると Stripe が承認要求を
+  自動的にレビューへ提出する。エージェントは
+  `POST /v2/core/approval_requests/{id}/update`（`Stripe-Version: 2026-07-29.preview`）で
+  `reason` を後付けする。別途 submit は不要。
+- **デフォルトルールが存在**：Stripe は agent-tagged key 向けに、返金作成・
+  サブスク解約を含む複数アクションのデフォルト承認ルールを維持している。preview が
+  有効なら、自分でルールを作らなくてもこれらは承認必須になる。
+- **agent key は独立 actor**：単一メンバーのアカウントでも、agent-tagged key は
+  アカウント管理者とは独立した actor として扱われるため、判定は「キーの身元」で行われる
+  （＝1人法人でも起案=agent / 承認=人間 の分離が成立。README 末尾 B-1 参照）。
+- **承認は Settings > Approvals > Requests 画面**で人間が行う。
 
 ---
 
@@ -158,7 +170,7 @@ npm run demo -- --only=INQ-001,INQ-003 --timeout=300
   dashboard_url・expires_at・各イベントの受信時刻とステータス遷移・最終結果を残す。
   append-only（各イベントで最新スナップショットを追記）。`npm run audit` で整形表示。
 - **Approvals のイベント**: Stripe Dashboard の **Security history** に残る。
-- **API リクエスト**: Stripe **Workbench の Logs** に残る（agent key の実行や submit）。
+- **API リクエスト**: Stripe **Workbench の Logs** に残る（agent key の実行や理由文の update）。
 
 ---
 
@@ -178,15 +190,19 @@ npm run demo -- --only=INQ-001,INQ-003 --timeout=300
 食い違いが出た場合、コードは正常系にフォールバックせず、HTTP ステータス/エラー本文を
 そのまま出す。詳細は [`docs/VERIFICATION.md`](docs/VERIFICATION.md)。
 
+**前提（消化済み）**: Approvals は preview 機能で、`approvals_product_preview` への
+**アクセス申請が前段**。未登録だと Settings > Approvals 画面が現れず gate も効かない
+（＝ INQ-001 が素通りしたのはルール未設定ではなく preview 未参加が原因の可能性が高い）。
+
 | # | 未検証項目 | 依存するコード | 最初に踏む確認 |
 |---|---|---|---|
-| B-1 | Approvals がアカウント/ test mode で有効か | 全体 | ルール1本設定後に `npm run propose -- --only=INQ-001` を実行し `approval_required` が返るか |
-| B-2 | `approval_required` の本文形状（`error.approval_request.{id,action,status,dashboard_url,expires_at}`） | `src/stripe-client.ts` `parseApprovalRequired` | 上記実行時のレスポンスをログで確認 |
-| B-3 | agent-tagged key で gate が発火するか | `src/stripe-client.ts` `agentRequest` | 同上。素通りしたら `rule_not_enforced` 警告が出る |
-| B-4 | `/v2/core/approval_requests/{id}/submit`（preview版）の要求/応答形状 | `src/stripe-client.ts` `submitApprovalRequest` | submit のHTTPステータス/ボディをログで確認 |
-| B-5 | `v2.core.approval_request.*` webhook の受信と thin event の形状 | `src/webhook.ts` | `stripe listen` 接続後、承認操作でイベントが届き id が取れるか |
+| B-0 | アカウントが Approvals preview に登録されているか | 全体 | Settings に Approvals が出るか。無ければ preview 申請 |
+| ~~B-1~~ | ~~agent-key submit の身元判定~~ → **ドキュメントで消化**：単一メンバーのアカウントでも agent-tagged key は管理者と独立した actor として扱われ、判定は「キーの身元」で行われる。1人法人でも 起案=agent / 承認=人間 の分離が成立 | — | 実測不要（Requests 画面で自分が承認できることの確認は任意） |
+| B-2 | `approval_required` の本文形状（`error.approval_request.{id,action,status,dashboard_url,expires_at}`） | `src/stripe-client.ts` `parseApprovalRequired` | preview 有効後に propose のレスポンスをログで確認 |
+| B-4 | `/v2/core/approval_requests/{id}/update`（`2026-07-29.preview`）の要求/応答形状 | `src/stripe-client.ts` `updateApprovalRequest` | update のHTTPステータス/ボディをログで確認 |
+| B-5 | `v2.core.approval_request.*` webhook（7種）の受信と thin event の形状 | `src/webhook.ts` | `stripe listen` 接続後、承認操作でイベントが届き id が取れるか |
 | B-6 | 承認→自動実行時に pending invoice item が請求書へ取り込まれるか | `src/agent/execute.ts`（invoice） | 承認後の invoice を Workbench Logs で確認 |
-| B-7 | 承認ルールが API から作成可能か（本デモは Dashboard 前提） | — | Dashboard 設定で代替（`docs/APPROVAL_RULES.md`） |
+| B-7 | 請求書作成が agent-key デフォルトルールの対象か（返金・解約はデフォルト対象と確認済み） | `docs/APPROVAL_RULES.md` | preview 有効後に INQ-004 が gate に掛かるか |
 | B-8 | Stripe agent skills（`stripe-docs` 等）の導入 | — | 導入可能環境で https://docs.stripe.com/skills |
 
 ---
@@ -199,7 +215,7 @@ src/
   types.ts           ドメイン型
   logger.ts          コンソール用の構造化ログ
   manifest.ts        fixtures/seeded.json の読み取り
-  stripe-client.ts   SDK(seed) + 生fetch(agent実行/submit) + approval_required解析
+  stripe-client.ts   SDK(seed) + 生fetch(agent実行/理由文update) + approval_required解析
   seed.ts            M1: test データ投入（冪等）
   agent/
     planner.ts       問い合わせ→アクション決定（決定論的分類）

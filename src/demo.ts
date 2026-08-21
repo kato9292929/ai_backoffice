@@ -24,6 +24,7 @@ import type { FinalResult } from './types.js';
 const TERMINAL: ReadonlySet<FinalResult> = new Set<FinalResult>([
   'executed',
   'rejected',
+  'canceled',
   'expired',
   'failed',
   'auto_executed',

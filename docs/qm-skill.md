@@ -43,7 +43,7 @@ Slack/web の問い合わせ
  Stripe API ──▶ approval_required（error.approval_request: id / dashboard_url / expires_at）
       │           ← gated アクションは実行されない
       ▼
- broker 経由 POST /v2/core/approval_requests/{id}/submit  （理由文=reason, preview版ヘッダ）
+ broker 経由 POST /v2/core/approval_requests/{id}/update  （理由文=reason, Stripe-Version: 2026-07-29.preview）
       │
       ├─▶ ここまでの tool_call/tool_result は qm の durable transcript に載る（二重記録しない）
       │
@@ -161,10 +161,14 @@ qm の記録は3系統: `audit_log`（粗い基盤アクション、JSON 列な�
 未消化を理由に本成果物の作成は止めていない。該当箇所にラベルを残し、想定外の挙動はフォールバックで
 隠さず、生の envelope status/body を出して大きく失敗させる方針。
 
-1. Stripe が agent-key の submit を「key の身元」と扱うか「key を作成した人間の身元」と扱うか
-   （エージェント操作者が Stripe 承認者を兼ねられるかに直結。**ただし Dashboard 承認者を別人にすれば
-   分離は成立するので設計ブロッカーではない**）。
-2. `POST /v2/core/approval_requests/{id}/submit`（preview 版）と `approval_required` 本文の実挙動。
+1. ~~Stripe が agent-key の submit を「key の身元」で扱うか「作成者」で扱うか~~
+   → **ドキュメントで消化**：agent-tagged key は管理者と独立した actor として扱われ、判定は
+   「キーの身元」で行われる。単一メンバーのアカウントでも 起案=agent / 承認=人間 が成立する。
+0. **Approvals は preview 機能**。アカウントが `approvals_product_preview` に登録されていること
+   が前提（未登録だと gate が効かない）。preview 申請が最初の関門。
+2. `POST /v2/core/approval_requests/{id}/update`（`2026-07-29.preview`）と `approval_required`
+   本文の実挙動（旧記述の `/submit` + `2026-06-24.preview` から訂正）。webhook は 7 種
+   （created/approved/succeeded/rejected/canceled/expired/failed）。
 3. qm を実キー（モデルキー＋Stripe service credential）＋`api.stripe.com` への egress ありで
    end-to-end 起動して確認。
 4. egress が validated-only である制約下で、Stripe スキルの宛先を `api.stripe.com` に固定できるか。

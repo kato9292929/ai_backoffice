@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { log } from '../logger.js';
 import { appendAudit } from '../audit-store.js';
 import { loadSeedManifest, type SeedManifest } from '../manifest.js';
-import { parseApprovalRequired, submitApprovalRequest } from '../stripe-client.js';
+import { parseApprovalRequired, updateApprovalRequest } from '../stripe-client.js';
 import type { AuditRecord, Inquiry } from '../types.js';
 import { plan } from './planner.js';
 import { buildJustification } from './justification.js';
@@ -16,13 +16,16 @@ import { execute } from './execute.js';
  *   2. decide action / target / amount            (planner)
  *   3. call Stripe with the agent key             (execute)
  *   4. parse the `approval_required` error         (parseApprovalRequired)
- *   5. generate a reason and SUBMIT it             (submitApprovalRequest)
+ *   5. generate a reason and ATTACH it via update  (updateApprovalRequest)
  *   6. record to the audit log and exit — never block waiting for approval.
  *
- * Explicit invariants from the spec:
- *   - We MUST call submit; an unsubmitted approval request lapses in 24h.
- *   - If a gated action executes without an approval_required, that means the
- *     rule is NOT enforcing — we log a WARNING and mark it, never treat as OK.
+ * Explicit invariants (per current Stripe docs):
+ *   - Stripe auto-submits the approval request to review when approval_required
+ *     is returned. We attach the agent's justification via the update endpoint;
+ *     there is no separate submit step.
+ *   - If a gated action executes without an approval_required, either the
+ *     account is not in the Approvals preview, or no rule matched. We log a
+ *     WARNING and mark it, never treat as OK.
  *   - We never auto-approve or auto-retry a pending request.
  */
 
@@ -114,10 +117,15 @@ export async function proposeForInquiry(
   // Path B: the action executed with no approval interception.
   if (result.ok) {
     if (actionPlan.expectedGated) {
-      // The rule is not enforcing — this is the failure the spec calls out.
+      // No approval interception. Most likely the account is not in the
+      // Approvals preview (approvals_product_preview); otherwise no rule
+      // matched. Stripe maintains default agent-key rules for actions incl.
+      // refund and subscription cancel, so with the preview enabled these
+      // should be gated even without a custom rule.
       log.warn(
         `${inquiry.id} ⚠ gated action executed WITHOUT approval — ` +
-          `rule not enforced. Check the M2 rule for ${actionPlan.action}.`,
+          `rule not enforced. Likely NOT enrolled in the Approvals preview ` +
+          `(approvals_product_preview), or no rule matched for ${actionPlan.action}.`,
       );
       appendAudit({ ...base, finalResult: 'rule_not_enforced' });
       return {
@@ -164,23 +172,24 @@ async function runExecute(
 
   const approvalRef = parseApprovalRequired(response);
   if (approvalRef) {
-    // Step 5: MUST submit, or it lapses unreviewed in 24h.
-    const submit = await submitApprovalRequest(approvalRef.id, justification);
-    if (!submit.ok) {
+    // Step 5: Stripe already auto-submitted the request to review; attach the
+    // agent's justification via the update endpoint.
+    const updated = await updateApprovalRequest(approvalRef.id, justification);
+    if (!updated.ok) {
       log.error(
-        `  submit failed HTTP ${submit.status}`,
-        JSON.stringify(submit.body?.error ?? submit.body),
+        `  update (attach reason) failed HTTP ${updated.status}`,
+        JSON.stringify(updated.body?.error ?? updated.body),
       );
       return {
         ok: false,
-        errorSummary: `submit failed: HTTP ${submit.status}`,
+        errorSummary: `update failed: HTTP ${updated.status}`,
       };
     }
-    log.ok(`  submitted justification (HTTP ${submit.status})`);
-    // Prefer the submit response's status if present.
-    const submittedStatus =
-      (submit.body?.status as string | undefined) ?? approvalRef.status;
-    return { ok: false, approval: { ...approvalRef, status: submittedStatus } };
+    log.ok(`  attached justification via update (HTTP ${updated.status})`);
+    // Prefer the update response's status if present.
+    const updatedStatus =
+      (updated.body?.status as string | undefined) ?? approvalRef.status;
+    return { ok: false, approval: { ...approvalRef, status: updatedStatus } };
   }
 
   if (response.ok) return { ok: true };

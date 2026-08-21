@@ -65,8 +65,8 @@ put them in the `body` field as shown.
 4. **Expect `approval_required`.** A gated action does NOT execute. Stripe returns an error
    envelope; parse `body` and read `error.approval_request` for `id`, `action`, `status`,
    `dashboard_url`, `expires_at`.
-5. **Write the justification and SUBMIT it.** Build the justification (format below) and
-   post it as the `reason`:
+5. **Write the justification and ATTACH it via update.** Stripe already auto-submitted the
+   approval request to review; you attach your reason with the update endpoint (NOT submit):
 
    ```bash
    curl -fsS -X POST "$AGENT_API_URL/v1/credentials/broker" \
@@ -75,17 +75,17 @@ put them in the `body` field as shown.
      -d '{
            "credential": "<stripe-slug>",
            "method": "POST",
-           "url": "https://api.stripe.com/v2/core/approval_requests/<apreq_id>/submit",
+           "url": "https://api.stripe.com/v2/core/approval_requests/<apreq_id>/update",
            "headers": {
-             "Stripe-Version": "2026-06-24.preview",
+             "Stripe-Version": "2026-07-29.preview",
              "content-type": "application/json"
            },
            "body": "{\"reason\":\"<the justification text>\"}"
          }'
    ```
 
-   You MUST submit. An auto-created approval request that is never submitted is not shown to
-   reviewers and lapses in 24 hours.
+   Attach the reason so the reviewer sees the grounds. There is no separate submit step in the
+   current docs — Stripe submits the request itself on `approval_required`.
 6. **Report and stop.** Post the `approval_request` id and `dashboard_url` back to the
    channel so a human can approve/deny in the Dashboard. Do **not** wait synchronously, do
    **not** re-run the action, and do **not** retry a pending request. After a human
@@ -150,14 +150,19 @@ exact failure this skill exists to prevent.
 - Never operate in live mode; never try to read the raw Stripe key back from the broker.
 - Never approve or work around your own proposal. Approval is a human action in the Stripe
   Dashboard, by someone other than the proposer.
-- A write is a write even when allowed: submit the justification and hand off; do not force
+- A write is a write even when allowed: attach the justification and hand off; do not force
   a result.
 
-## 未検証 (UNVERIFIED against live Stripe)
+## Prerequisite & 未検証 (UNVERIFIED against live Stripe)
 
-The exact `approval_required` body shape, the `/v2/.../submit` response, and whether Stripe
-attributes an agent-key submission to the key's own identity or to the human who created
-the key are coded to Stripe's published Approvals docs, **not** confirmed against a live
-agent key. If live behaviour differs from the recipes above, surface the raw envelope
-`status`/`body` — do not fall back to a success path. See `docs/qm-skill.md` for the full
-list.
+**Prerequisite**: Approvals is a preview feature — the Stripe account must be enrolled in
+`approvals_product_preview`, otherwise nothing is gated and refunds run unblocked (the skill
+then reports `rule_not_enforced`). Stripe maintains default agent-key rules for refund and
+subscription cancellation, so with the preview enabled those are gated without a custom rule.
+The identity split is settled by docs: an agent-tagged key is an actor independent of the
+account admin, so even a single-member account gates on the key's identity.
+
+**Unverified**: the exact `approval_required` body shape and the `/v2/.../update` response
+are coded to Stripe's published Approvals docs, **not** confirmed against a live agent key.
+If live behaviour differs from the recipes above, surface the raw envelope `status`/`body` —
+do not fall back to a success path. See `docs/qm-skill.md` for the full list.
