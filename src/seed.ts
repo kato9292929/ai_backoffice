@@ -3,7 +3,12 @@ import { dirname } from 'node:path';
 import type Stripe from 'stripe';
 import { makeSdk } from './stripe-client.js';
 import { log } from './logger.js';
-import { SEED_PATH, loadSeedManifest, type SeedManifest } from './manifest.js';
+import {
+  POOL_CHARGE_HANDLE,
+  SEED_PATH,
+  loadSeedManifest,
+  type SeedManifest,
+} from './manifest.js';
 
 /**
  * M1 — seed the minimum test-mode data the demo needs, reproducibly.
@@ -66,11 +71,33 @@ const SUBSCRIPTIONS = [
 ] as const;
 
 // Paid, refundable charges (amounts aligned with the inquiry fixtures).
+// `minRemaining`: the charge is reused only while at least this much is still
+// unrefunded. Fixture charges need their full amount (any refund consumes
+// them); the pool serves many small partial refunds (M9 runaway / M10 route
+// comparison) and is replenished once it runs low.
 const CHARGES = [
-  { handle: 'tanaka-dup', customerHandle: 'tanaka', amount: 3300, note: '二重課金の重複分（INQ-001の返金対象）' },
-  { handle: 'yamada-annual', customerHandle: 'yamada', amount: 80000, note: '年間前払い（INQ-002の高額返金対象）' },
-  { handle: 'suzuki-month', customerHandle: 'suzuki', amount: 5000, note: '月額分（INQ-003の疑わしい返金対象）' },
+  { handle: 'tanaka-dup', customerHandle: 'tanaka', amount: 3300, minRemaining: 3300, note: '二重課金の重複分（INQ-001の返金対象）' },
+  { handle: 'yamada-annual', customerHandle: 'yamada', amount: 80000, minRemaining: 80000, note: '年間前払い（INQ-002の高額返金対象）' },
+  { handle: 'suzuki-month', customerHandle: 'suzuki', amount: 5000, minRemaining: 5000, note: '月額分（INQ-003の疑わしい返金対象）' },
+  { handle: POOL_CHARGE_HANDLE, customerHandle: 'suzuki', amount: 20000, minRemaining: 7500, note: '少額返金の連発用プール（M9 暴走シナリオ / M10 経路比較）' },
 ] as const;
+
+// Finalized (open) invoices a credit note is issued against (M8, INQ-004).
+// Credit notes need an existing finalized invoice; the agent never creates the
+// invoice itself (invoice creation is not an Approvals-supported action).
+const INVOICES = [
+  {
+    handle: 'sato-onsite',
+    customerHandle: 'sato',
+    amount: 30000,
+    description: '初期設定 追加サポート（オンサイト対応2日分）',
+    note: 'オンサイト2日分の請求（INQ-004のクレジットノート対象）',
+  },
+] as const;
+
+/** Credit note amount INQ-004 asks for; an invoice with less remaining is
+ * treated as consumed and replenished. */
+const CREDIT_NOTE_MIN_REMAINING = 15000;
 
 const CURRENCY = 'jpy';
 
@@ -86,6 +113,7 @@ export async function runSeed(): Promise<void> {
     prices: [],
     subscriptions: [],
     charges: [],
+    invoices: [],
   };
 
   // 1) Customers -------------------------------------------------------------
@@ -223,8 +251,8 @@ export async function runSeed(): Promise<void> {
             : (pi.latest_charge?.id ?? existing.chargeId);
         if (!chId) return null;
         const charge = await stripe.charges.retrieve(chId);
-        const consumed =
-          charge.refunded || charge.amount_refunded >= charge.amount;
+        const remaining = charge.amount - charge.amount_refunded;
+        const consumed = charge.refunded || remaining < ch.minRemaining;
         return consumed ? null : pi;
       }));
     if (piOk && existing) {
@@ -262,12 +290,69 @@ export async function runSeed(): Promise<void> {
     log.ok(`charge created ${ch.handle} → pi=${pi.id} charge=${chargeId} (${pi.status})`);
   }
 
+  // 5) Open invoices for credit notes (M8) ----------------------------------
+  for (const iv of INVOICES) {
+    const existing = prev?.invoices?.find((x) => x.handle === iv.handle);
+    // Reuse only while the invoice is still open, has no credit notes yet and
+    // enough left to credit — a previous demo run's credit note consumes it.
+    const invOk =
+      !!existing &&
+      (await stillExists(async () => {
+        const inv = await stripe.invoices.retrieve(existing.id);
+        const credited =
+          (inv.pre_payment_credit_notes_amount ?? 0) +
+          (inv.post_payment_credit_notes_amount ?? 0);
+        const usable =
+          inv.status === 'open' &&
+          credited === 0 &&
+          inv.amount_remaining >= CREDIT_NOTE_MIN_REMAINING;
+        return usable ? inv : null;
+      }));
+    if (invOk && existing) {
+      manifest.invoices!.push(existing);
+      log.info(`invoice reused ${iv.handle} → ${existing.id}`);
+      continue;
+    }
+    if (existing) {
+      log.info(`invoice ${iv.handle} consumed/missing → creating a fresh one`);
+    }
+    const cust = customerId(iv.customerHandle);
+    const draft = await stripe.invoices.create({
+      customer: cust,
+      collection_method: 'send_invoice',
+      days_until_due: 7,
+      pending_invoice_items_behavior: 'exclude',
+      description: iv.note,
+      metadata: { demo_seed: SEED_TAG, demo_handle: iv.handle },
+    });
+    await stripe.invoiceItems.create({
+      customer: cust,
+      invoice: draft.id,
+      amount: iv.amount,
+      currency: CURRENCY,
+      description: iv.description,
+      metadata: { demo_seed: SEED_TAG, demo_handle: iv.handle },
+    });
+    // Finalize so a credit note can be issued (draft invoices cannot be credited).
+    const inv = await stripe.invoices.finalizeInvoice(draft.id, { auto_advance: false });
+    manifest.invoices!.push({
+      handle: iv.handle,
+      id: inv.id,
+      customerHandle: iv.customerHandle,
+      amount: iv.amount,
+      currency: CURRENCY,
+      note: iv.note,
+    });
+    log.ok(`invoice created ${iv.handle} → ${inv.id} (${inv.status}, ¥${inv.amount_due})`);
+  }
+
   saveManifest(manifest);
   log.section('seed complete');
   log.ok(`manifest written → ${SEED_PATH}`);
   log.info(
     `customers=${manifest.customers.length} prices=${manifest.prices.length} ` +
-      `subscriptions=${manifest.subscriptions.length} charges=${manifest.charges.length}`,
+      `subscriptions=${manifest.subscriptions.length} charges=${manifest.charges.length} ` +
+      `invoices=${manifest.invoices!.length}`,
   );
 }
 

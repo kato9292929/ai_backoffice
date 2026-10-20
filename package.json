@@ -13,7 +13,12 @@
     "webhook": "tsx src/webhook.ts",
     "propose": "tsx src/agent/propose.ts",
     "demo": "tsx src/demo.ts",
+    "demo:runaway": "tsx src/runaway.ts",
+    "demo:mcp": "tsx src/routes.ts",
     "audit": "tsx src/audit.ts",
+    "evidence": "tsx src/evidence.ts",
+    "approvals:cancel": "tsx src/cancel.ts",
+    "x402:check": "tsx src/x402-check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

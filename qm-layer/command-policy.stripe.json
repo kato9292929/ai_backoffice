@@ -9,9 +9,9 @@
       "reason": "Stripe refund proposed by agent — pauses locally; Stripe Approvals is the authoritative gate"
     },
     {
-      "pattern": "api\\.stripe\\.com/v1/invoices\\b",
+      "pattern": "api\\.stripe\\.com/v1/credit_notes\\b",
       "decision": "require_approval",
-      "reason": "Stripe invoice creation proposed by agent — pauses locally; Stripe Approvals is the authoritative gate"
+      "reason": "Stripe credit note proposed by agent — pauses locally; Stripe Approvals is the authoritative gate"
     },
     {
       "pattern": "\"method\"\\s*:\\s*\"DELETE\"[^}]*api\\.stripe\\.com/v1/subscriptions/",

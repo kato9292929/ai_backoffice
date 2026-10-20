@@ -1,36 +1,35 @@
-# M2 — 承認ルール定義（人間の管理者が Dashboard で設定する）
+# 承認ルール定義（人間の管理者が Dashboard で設定する）
 
-> **前提（現行 Stripe ドキュメント）**
-> - **Approvals は preview 機能**。アカウントが `approvals_product_preview` に登録
->   されていないと Settings > Approvals 画面が現れない。**preview 申請が最初の関門**。
-> - **デフォルトルールが既にある**：Stripe は agent-tagged key 向けに、**返金作成・
->   サブスク解約を含む複数アクションのデフォルト承認ルール**を維持している。preview が
->   有効なら、下の表のルールを自作しなくても返金・解約は承認必須になる。下の表は
->   「しきい値など条件を自分で調整したい場合」や「デフォルト対象外のアクション
->   （請求書作成がデフォルトに含まれるかは要確認 = B-7）」を明示的にゲートしたい場合に使う。
-> - **単一メンバーのアカウントでも成立**：agent-tagged key は管理者と独立した actor
->   として扱われるため、`actor condition = agent-tagged API keys` のルールのみ保存でき、
->   判定は「キーの身元」で行われる（1人法人でも 起案=agent / 承認=人間 が成立）。
-> - 承認は **Settings > Approvals > Requests** 画面で行う。
+> **前提（Stripe 公式ドキュメント、2026-10-20 再読）**
+> - 設定場所は **Settings > [Approvals](https://dashboard.stripe.com/settings/approvals/rules)**。
+>   ルールの作成・編集は Dashboard から（**ルールの API はドキュメントに無い**）。既定では
+>   Administrator ロールのメンバーだけが作成・編集できる。
+> - **対象にできる操作は7つ**：銀行口座の追加・更新・削除 / 管理者の招待 / PaymentIntent の作成 /
+>   返金の作成 / サブスクの作成・解約 / クレジットノートの作成 / 顧客残高取引の作成。
+>   **請求書は対象外**（M8 で請求書シナリオをクレジットノートに差し替えた）。
+> - **条件は amount / actor / rate limit の3種**。複数付けて `and` / `or` で組み合わせられる。
+> - **制御は Require approval（承認まで保留）か Block（即時拒否）のどちらか1つ**。
+> - **同じ操作に有効なルールは1つだけ**。
+> - **agent タグ付きキーのデフォルトルール**：Stripe が管理するルールがある。記述がページ間で
+>   揃っていない（Approvals ページ=返金の作成・サブスクの解約 / API keys ページ=payouts・refunds・
+>   アカウント設定変更）。**実際に何が入っているかは B-7 で確認**し、デフォルトルールがある操作は
+>   新規作成ではなく**そのルールを編集**する（有効なルールは1つだけのため）。
+> - **単一メンバーのアカウントでも成立**：actor 条件を `agent-tagged API keys` にしたルールは
+>   1人のアカウントでも保存できる（agent キーは管理者と独立した actor）。
+> - 承認は **Settings > Approvals > Requests**。**14日で自動失効**。自分の起案は自分で承認できない。
 
-承認ルールの作成は **Dashboard の管理者操作**（Settings > Approvals）で行う。
-API での作成可否は M0 §B の未消化項目（要ライブ確認）。CC の担当は
-**設定内容を確定して提示すること**まで。以下3表のとおり設定し、完了を確認して
-から M3（起案）を実運用すること。
+CC の担当は**設定内容を確定して提示すること**まで。以下のとおり設定し、チェックが
+付いてから起案を運用する。
 
 共通の前提:
 
-- **すべて test mode**。
-- **Client condition = Agent**：agent-tagged key 経由の操作だけを承認対象にする。
-  人間が Dashboard から直接行う同種操作は承認対象外（＝管理者が承認と実行を
-  兼ねられる。「自分の起案は自分で承認できない」制約と両立させるため、承認者は
-  起案 agent とは別の個人にする）。
-- **コントロール = Require approval**（Block ではない）。
-- **レビュアーは個人指定**：ロール指定だとメール通知が飛ばない。承認操作をする
-  実在の個人を指定する。
-- **1アクションにつき有効化できるルールは1つ**。
-- **custom justification instructions の項目立ては、エージェントが生成する理由文
-  （`src/agent/justification.ts`）と一致させる**。エージェントの出力は次の8行:
+- **すべて sandbox / test mode**。
+- **Actor condition = agent-tagged API keys**：agent キー経由の操作だけを承認対象にする。
+  人間が Dashboard から行う同種操作は対象外。
+- **Designated reviewers は個人で指定**：ロール指定だとメール通知が飛ばない
+  （Approvals ページ「Only individually assigned team members receive email notifications」）。
+- **custom justification instructions の項目立ては、エージェントの理由文
+  （`src/agent/justification.ts`）と一致させる**。エージェントの出力は次のとおり（全アクション共通）:
 
   ```
   【AIバックオフィス 起案理由】
@@ -46,68 +45,136 @@ API での作成可否は M0 §B の未消化項目（要ライブ確認）。CC
 
 ---
 
-## ルール1: 返金（create_refund）
+## ルール1: 返金の作成（Refund is created）— 承認版
 
 | 項目 | 内容 |
 |---|---|
 | ルール名 | `AI-返金-承認必須（1,000円超）` |
-| 対象アクション | `create_refund` |
-| 条件 | 返金額 > **¥1,000**（`REFUND_APPROVAL_THRESHOLD_JPY` と一致）。デモの返金は全て 1,000 円超（¥3,300 / ¥80,000 / ¥5,000）なので3ケースとも承認必須になる |
-| Client condition | Agent |
-| コントロール | Require approval |
-| レビュアー | 個人指定（例: 経理担当者本人。起案 agent とは別人格） |
-| custom justification instructions | 「次の8項目を必ず記載すること: 起案根拠(問い合わせ) / 対象顧客 / アクション / 対象オブジェクト / 金額 / 判断根拠コード / 判断根拠 / 起案者。金額の妥当性と重複・不正の有無を確認し承認可否を判断する。」（ラベルは `src/agent/justification.ts` の出力と一致） |
+| 対象操作 | Refund is created |
+| 条件 | Actor = agent-tagged API keys **and** Amount > **¥1,000**（`REFUND_APPROVAL_THRESHOLD_JPY` と一致） |
+| 制御 | Require approval |
+| Designated reviewers | 個人指定（承認ボタンを押す本人） |
+| custom justification instructions | 「次の8項目を必ず記載すること: 起案根拠(問い合わせ) / 対象顧客 / アクション / 対象オブジェクト / 金額 / 判断根拠コード / 判断根拠 / 起案者。金額の妥当性と重複・不正の有無を確認し承認可否を判断する。」 |
 
-> しきい値の意図: 「少額でも正当なら承認を通す（ケース1）」「高額は当然承認必須
-> （ケース2）」「根拠が薄いものは却下（ケース3）」を1本のルールで見せる。閾値以下の
-> 極小返金は自動実行される想定だが、デモではその経路を使わない（対比は請求書でなく
-> メタデータ更新のケース6が担う）。
+> デフォルトルールに「返金の作成」がある場合は、それを編集して上の内容にする。
+> デモの返金は INQ が ¥3,300 / ¥80,000 / ¥5,000、M9・M10 が既定 ¥1,500 で、すべて ¥1,000 超。
 
 ---
 
-## ルール2: 請求書作成（Invoice is created）
+## ルール2: クレジットノートの作成（Credit note is created）— M8 で追加
 
 | 項目 | 内容 |
 |---|---|
-| ルール名 | `AI-請求書発行-承認必須` |
-| 対象アクション | Invoice is created（請求書の作成） |
-| 条件 | agent 起案の請求書作成すべて（金額条件なし、または任意の下限）。デモは ¥30,000 |
-| Client condition | Agent |
-| コントロール | Require approval |
-| レビュアー | 個人指定 |
-| custom justification instructions | 「請求書発行の起案。記載8項目に加え、請求金額が見積り合意額と一致するかを確認して承認する。」 |
+| ルール名 | `AI-クレジットノート-承認必須` |
+| 対象操作 | Credit note is created |
+| 条件 | Actor = agent-tagged API keys（金額条件なし） |
+| 制御 | Require approval |
+| Designated reviewers | 個人指定 |
+| custom justification instructions | 「請求済み金額の減額の起案。記載8項目に加え、対象請求書・減額の理由（未実施分など）・減額金額が妥当かを確認して承認する。」 |
 
-> 粒度の注意: gate 対象は**請求書の作成**。エージェントは先に（承認不要の）
-> invoice item を作成してから invoice を作成し、その invoice 作成で
-> `approval_required` を受ける。
+> デフォルトルールの対象外と見込まれるので**新規作成が必要**（B-6 で approval_required が返るかを確認）。
+> エージェントは seed 済みの open 請求書（¥30,000）に対し、¥15,000 のクレジットノートを
+> custom line item 1行で起案する。
 
 ---
 
-## ルール3: サブスク解約（Subscription is cancelled）
+## ルール3: サブスクの解約（Subscription is canceled）
 
 | 項目 | 内容 |
 |---|---|
 | ルール名 | `AI-解約-承認必須` |
-| 対象アクション | Subscription is cancelled（サブスクの解約） |
-| 条件 | agent 起案の解約すべて |
-| Client condition | Agent |
-| コントロール | Require approval |
-| レビュアー | 個人指定 |
+| 対象操作 | Subscription is created or canceled（解約） |
+| 条件 | Actor = agent-tagged API keys |
+| 制御 | Require approval |
+| Designated reviewers | 個人指定 |
 | custom justification instructions | 「不可逆な解約の起案。記載8項目に加え、対象サブスクリプションと顧客意向の一致、返金要否を確認して承認する。」 |
 
-> 不可逆アクションの例として置いている。承認後は Stripe が解約を自動実行するので、
-> こちらから再実行しない。
+> デフォルトルールに含まれる見込み（Approvals ページの記述）。あればそれを使い、
+> レビュアーだけ個人指定にする。承認後は Stripe が解約を自動実行するので、こちらから再実行しない。
+
+---
+
+## ルール4（任意）: 顧客残高取引の作成（Customer balance transaction is created）
+
+INQ-007 を有効化するとき（`ENABLE_BALANCE_COMPENSATION=true` / `--with-balance`）だけ必要。
+
+| 項目 | 内容 |
+|---|---|
+| ルール名 | `AI-残高付与-承認必須` |
+| 対象操作 | Customer balance transaction is created |
+| 条件 | Actor = agent-tagged API keys |
+| 制御 | Require approval |
+| Designated reviewers | 個人指定 |
+| custom justification instructions | 「返金の代わりに残高付与で補償する起案。記載8項目に加え、補償額の根拠（障害期間など）と、返金でなく残高付与にする顧客意向を確認して承認する。」 |
+
+---
+
+## M9: 暴走シナリオのルール構成（Block 版 / 承認版）
+
+### 1つのルールにまとめられるか
+
+想定は「返金を agent が短時間に連発したら Block、それ以外は承認必須」。ドキュメント上:
+
+- 条件（amount / actor / rate limit）は `and` / `or` で組み合わせられる。
+- しかし**制御は1ルールに1つ**（Require approval か Block）。
+- **同じ操作に有効なルールは1つだけ**。
+
+したがって「rate limit 超過 → Block、そうでなければ → Require approval」という
+**制御の出し分けは1ルールでは表現できない**。条件を組み合わせて作れるのは次のどちらか一方だけ:
+
+- `actor = agent and rate limit 超過` → Block：超過分は拒否されるが、**それ未満は承認なしで即時実行**される
+- `actor = agent and rate limit 超過` → Require approval：超過分だけ承認待ちになり、それ未満は即時実行
+
+このため、デモは**ルールを切り替えて2回に分けて流す**設計にした（`--rule-set` はログ上のラベル）。
+
+### Block 版（`npm run demo:runaway -- --rule-set=block`）
+
+| 項目 | 内容 |
+|---|---|
+| ルール名 | `AI-返金-連発ブロック` |
+| 対象操作 | Refund is created |
+| 条件 | Actor = agent-tagged API keys **and** Rate limit：**10分間に3件を超えたら** |
+| 制御 | **Block** |
+
+流し方: ルール1（承認版）を**無効化**し、このルールを**有効化**してから
+
+```bash
+npm run demo:runaway -- --count=5 --interval=10 --amount=1500 --rule-set=block
+```
+
+期待: #1〜#3 は即時実行（¥1,500 × 3 がプールから実際に返金される）、#4 以降が Block。
+Block のエラー本文は `logs/requests.jsonl` に生のまま残り、`npm run evidence -- --outcome=blocked`
+（分類できなかった場合は `--outcome=error`）で取り出して B-9 を確定する。
+
+### 承認版（`npm run demo:runaway -- --rule-set=approval`）
+
+| 項目 | 内容 |
+|---|---|
+| ルール | ルール1（返金・承認版）。デフォルトルールがあればそれ |
+| 条件 | Actor = agent-tagged API keys（and Amount > ¥1,000） |
+| 制御 | Require approval |
+
+流し方: Block 版を**無効化**し、ルール1を**有効化**してから
+
+```bash
+npm run demo:runaway -- --count=5 --interval=10 --amount=1500 --rule-set=approval
+```
+
+期待: 全件 approval_required（承認待ちが5件できる）。デモ後は承認せず、却下するか
+`npm run approvals:cancel -- --fixture=RUNAWAY#1` などで取り消す。
 
 ---
 
 ## 設定完了チェック（人間側）
 
-- [ ] 3ルールを Settings > Approvals に作成し、**有効化**した
-- [ ] 3ルールとも Client condition = Agent、コントロール = Require approval
-- [ ] レビュアーを**個人**で指定した（メール通知のため）
-- [ ] 承認者は起案 agent と別人格（自分の起案は自分で承認できない）
-- [ ] しきい値 ¥1,000 が `.env` の `REFUND_APPROVAL_THRESHOLD_JPY` と一致
+- [ ] Settings > Approvals が表示される（B-0）
+- [ ] デフォルトルールの中身を確認し、スクショを取った（B-7）
+- [ ] ルール1（返金・承認版）が**有効**。デフォルトルールがあればそれを編集
+- [ ] ルール2（クレジットノート）を作成し**有効化**
+- [ ] ルール3（解約）が**有効**
+- [ ] M9 用の Block 版ルールを作成し、**保存のみ（無効）**にしてある（M9 実行時に切り替え）
+- [ ] 全ルールで Designated reviewers を**個人**で指定した
+- [ ] （INQ-007 を使う場合のみ）ルール4を作成し有効化
 
-> この表のとおり設定し、上のチェックが全て付いてから M3 を実運用すること。
 > ルールが無効・未設定のまま起案すると、gated アクションが素通りし、ログに
 > `rule_not_enforced` の警告が出る（＝迂回ではなく検知される）。

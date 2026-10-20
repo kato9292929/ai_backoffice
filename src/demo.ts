@@ -2,6 +2,7 @@ import { log } from './logger.js';
 import { runSeed } from './seed.js';
 import { loadSeedManifest } from './manifest.js';
 import { loadInquiries, proposeForInquiry, type ProposeOutcome } from './agent/propose.js';
+import { newRunId } from './request-log.js';
 import { findByApprovalId } from './audit-store.js';
 import type { FinalResult } from './types.js';
 
@@ -19,6 +20,7 @@ import type { FinalResult } from './types.js';
  *   --no-wait            propose and exit without watching for approvals
  *   --timeout=<seconds>  give up waiting after N seconds (default 900)
  *   --poll=<seconds>     poll interval while waiting (default 5)
+ *   --with-balance       include the opt-in balance-compensation case (INQ-007)
  */
 
 const TERMINAL: ReadonlySet<FinalResult> = new Set<FinalResult>([
@@ -27,6 +29,7 @@ const TERMINAL: ReadonlySet<FinalResult> = new Set<FinalResult>([
   'canceled',
   'expired',
   'failed',
+  'blocked',
   'auto_executed',
   'rule_not_enforced',
 ]);
@@ -106,10 +109,11 @@ async function main(): Promise<void> {
     : null;
   const inquiries = only ? all.filter((i) => only.has(i.id.toUpperCase())) : all;
 
-  log.section(`起案 — ${inquiries.length} 件`);
+  const ctx = { runId: newRunId('demo'), route: 'cli' as const };
+  log.section(`起案 — ${inquiries.length} 件 (run ${ctx.runId})`);
   const outcomes: ProposeOutcome[] = [];
   for (const inq of inquiries) {
-    outcomes.push(await proposeForInquiry(inq, manifest));
+    outcomes.push(await proposeForInquiry(inq, manifest, ctx));
   }
 
   log.section('起案サマリ');

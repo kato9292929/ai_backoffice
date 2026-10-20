@@ -36,12 +36,20 @@ function main(): void {
 
   console.log('');
   console.log(
-    ['fixture', 'action', 'amount', 'final', 'events'].join('\t'),
+    ['fixture', 'route', 'action', 'amount', 'final', 'events', 'result'].join('\t'),
   );
   console.log('─'.repeat(80));
   for (const r of latest) {
     console.log(
-      [r.fixtureId, r.action, fmtAmount(r), r.finalResult, fmtEvents(r)].join('\t'),
+      [
+        r.fixtureId,
+        r.route ?? 'cli',
+        r.action,
+        fmtAmount(r),
+        r.finalResult,
+        fmtEvents(r),
+        r.resultObject ? `${r.resultObject.object}:${r.resultObject.id}` : '-',
+      ].join('\t'),
     );
   }
   console.log('');

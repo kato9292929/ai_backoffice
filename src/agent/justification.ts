@@ -13,8 +13,9 @@ import type { ActionPlan, Inquiry } from '../types.js';
 
 const ACTION_LABEL: Record<ActionPlan['action'], string> = {
   create_refund: '返金',
-  create_invoice: '請求書発行',
+  create_credit_note: 'クレジットノート発行',
   cancel_subscription: 'サブスクリプション解約',
+  create_balance_transaction: '顧客残高付与（補償）',
   update_customer_metadata: '顧客メタデータ更新',
 };
 

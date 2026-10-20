@@ -2,12 +2,16 @@
  * Shared domain types for the AI back-office demo.
  */
 
-/** The three money-moving actions this demo can propose. All are in Stripe
- * Approvals' Supported actions list. */
+/** The money-moving actions this demo can propose. All are in Stripe
+ * Approvals' Supported actions list (Set up two-party approvals, 2026-10-20):
+ * refund / credit note / subscription cancel / customer balance transaction.
+ * (Invoice creation is NOT a supported action — M8 replaced it.) */
 export type ActionType =
   | 'create_refund'
-  | 'create_invoice'
+  | 'create_credit_note'
   | 'cancel_subscription'
+  /** Compensation by customer-balance credit instead of a refund (M8, opt-in). */
+  | 'create_balance_transaction'
   /** A deliberately un-gated action, used as a contrast case (M3 #6). */
   | 'update_customer_metadata';
 
@@ -21,6 +25,9 @@ export interface Inquiry {
   customerRef: string;
   /** Human-readable note about what this case is meant to demonstrate. */
   expectation: string;
+  /** Opt-in feature flag. Inquiries carrying one are skipped unless that flag
+   * is enabled (e.g. "balance" → ENABLE_BALANCE_COMPENSATION / --with-balance). */
+  flag?: string;
 }
 
 /** The agent's decision about what to do with an inquiry (M3 step 2). */
@@ -39,7 +46,7 @@ export interface ActionPlan {
     /** One-line human summary of why this action is warranted. */
     summary: string;
   };
-  /** Action-specific extras (invoice due days, new metadata value, ...). */
+  /** Action-specific extras (credit note reason, new metadata value, ...). */
   params?: Record<string, unknown>;
   /** Whether this action is expected to be gated by an approval rule. Used to
    * detect a rule that silently failed to enforce (M3 requirement). */
@@ -63,8 +70,19 @@ export type FinalResult =
   | 'canceled' // approval request withdrawn/canceled
   | 'expired' // approval request lapsed
   | 'failed' // approved but Stripe execution failed
+  | 'blocked' // rejected outright by a Block rule (M9)
   | 'auto_executed' // no rule matched; ran without approval (contrast case)
   | 'rule_not_enforced'; // WARNING: gated action ran without approval
+
+/** How Stripe answered one agent request (M9: one line per request). */
+export type RequestOutcome =
+  | 'executed' // 2xx: ran immediately
+  | 'approval_required' // intercepted by a Require-approval rule
+  | 'blocked' // rejected by a Block rule (B-9: shape inferred, see stripe-client)
+  | 'error'; // anything else — raw body kept for diagnosis
+
+/** Which client path made the request (M10). */
+export type Route = 'cli' | 'mcp';
 
 /** One JSONL audit record. Written at propose time and appended to as
  * webhook events arrive. */
@@ -79,6 +97,11 @@ export interface AuditRecord {
   /** Full justification text the agent generated. */
   justification: string;
   approvalRequest?: ApprovalRequestRef;
+  /** Client path the proposal went through (absent on pre-M10 records = cli). */
+  route?: Route;
+  /** Object Stripe created when it executed the approved action (from the
+   * approval request's status_details on `succeeded`). */
+  resultObject?: { id: string; object: string };
   /** State transitions appended as webhook events land. */
   events: Array<{
     receivedAt: string;

@@ -6,10 +6,10 @@ import type { ActionPlan } from '../types.js';
  * that gated actions are intercepted by Approvals (M3 step 3).
  *
  * We do NOT throw on 4xx — the caller inspects the returned RawResponse for an
- * `approval_required` error. Some actions take a preparatory step (e.g. an
- * invoice needs a pending invoice item first); those are reported separately so
- * they can be logged, but only the final "gated" call's response is returned as
- * `response`.
+ * `approval_required` error. An action that needs a preparatory step reports
+ * it separately so it can be logged, but only the final "gated" call's
+ * response is returned as `response`. (None of the current actions needs one
+ * since M8 replaced the two-step invoice with a credit note.)
  */
 
 export interface ExecuteResult {
@@ -33,34 +33,23 @@ export async function execute(plan: ActionPlan): Promise<ExecuteResult> {
       return { response, preSteps };
     }
 
-    case 'create_invoice': {
-      const customer = plan.targetId;
-      // Step 1 (un-gated): create a pending invoice item to give the invoice a
-      // line. Tagged so re-runs are identifiable.
-      //
-      // UNVERIFIED against live Stripe (M0 §B): we assume that when the gated
-      // invoice creation is later approved and auto-executed by Stripe, the
-      // pending invoice item created here is pulled into that invoice
-      // (pending_invoice_items_behavior: 'include'). This is not confirmed
-      // against a live agent key. If the live behaviour differs, the invoice
-      // will surface with an unexpected total/lines rather than being silently
-      // "fixed" — inspect the created invoice in Workbench Logs to confirm.
-      const itemResp = await agentRequest('POST', '/v1/invoiceitems', {
-        customer,
-        amount: plan.amount,
-        currency: plan.currency ?? 'jpy',
-        description: (plan.params?.description as string) ?? '追加費用',
-        metadata: { demo_action: 'create_invoice_item' },
-      });
-      preSteps.push({ label: 'invoiceitem', response: itemResp });
-
-      // Step 2 (gated): create the invoice. This is the action Approvals gates.
-      const response = await agentRequest('POST', '/v1/invoices', {
-        customer,
-        collection_method: 'send_invoice',
-        days_until_due: (plan.params?.daysUntilDue as number) ?? 7,
-        pending_invoice_items_behavior: 'include',
-        metadata: { demo_action: 'create_invoice' },
+    case 'create_credit_note': {
+      // Credit note against a finalized invoice, as one custom line so the
+      // credited amount is explicit. "Credit note is created" is an
+      // Approvals-supported action (no default agent rule — needs a custom one).
+      const response = await agentRequest('POST', '/v1/credit_notes', {
+        invoice: plan.targetId,
+        reason: (plan.params?.reason as string) ?? 'order_change',
+        lines: [
+          {
+            type: 'custom_line_item',
+            description: (plan.params?.description as string) ?? '減額',
+            quantity: 1,
+            unit_amount: plan.amount,
+          },
+        ],
+        memo: plan.rationale.summary,
+        metadata: { demo_action: 'create_credit_note' },
       });
       return { response, preSteps };
     }
@@ -69,6 +58,21 @@ export async function execute(plan: ActionPlan): Promise<ExecuteResult> {
       const response = await agentRequest(
         'DELETE',
         `/v1/subscriptions/${encodeURIComponent(plan.targetId)}`,
+      );
+      return { response, preSteps };
+    }
+
+    case 'create_balance_transaction': {
+      // A negative amount is a credit applied to the customer's next invoice.
+      const response = await agentRequest(
+        'POST',
+        `/v1/customers/${encodeURIComponent(plan.targetId)}/balance_transactions`,
+        {
+          amount: -(plan.amount ?? 0),
+          currency: plan.currency ?? 'jpy',
+          description: (plan.params?.description as string) ?? '補償',
+          metadata: { demo_action: 'create_balance_transaction' },
+        },
       );
       return { response, preSteps };
     }

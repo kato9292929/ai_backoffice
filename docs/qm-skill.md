@@ -43,7 +43,7 @@ Slack/web の問い合わせ
  Stripe API ──▶ approval_required（error.approval_request: id / dashboard_url / expires_at）
       │           ← gated アクションは実行されない
       ▼
- broker 経由 POST /v2/core/approval_requests/{id}/update  （理由文=reason, Stripe-Version: 2026-07-29.preview）
+ broker 経由 POST /v2/core/approval_requests/{id}/update  （理由文=reason, Stripe-Version: 2026-09-30.preview）
       │
       ├─▶ ここまでの tool_call/tool_result は qm の durable transcript に載る（二重記録しない）
       │
@@ -92,7 +92,7 @@ slug 参照・host/method/path 固定の共有資格情報で、`use-shared-cred
 - slug: 任意（例 `stripe-test`）。エージェントの system prompt に host/method/path 付きで提示される
 - host: `api.stripe.com`
 - methods: `POST`, `DELETE`
-- path prefixes: `/v1/refunds`, `/v1/invoiceitems`, `/v1/invoices`, `/v1/subscriptions/`,
+- path prefixes: `/v1/refunds`, `/v1/credit_notes`, `/v1/subscriptions/`,
   `/v1/customers/`, `/v2/core/approval_requests/`
 
 **未確認**: 管理者がサービス資格情報を登録する具体的な admin UI/CLI/HTTP 経路は追跡していない
@@ -166,7 +166,7 @@ qm の記録は3系統: `audit_log`（粗い基盤アクション、JSON 列な�
    「キーの身元」で行われる。単一メンバーのアカウントでも 起案=agent / 承認=人間 が成立する。
 0. **Approvals は preview 機能**。アカウントが `approvals_product_preview` に登録されていること
    が前提（未登録だと gate が効かない）。preview 申請が最初の関門。
-2. `POST /v2/core/approval_requests/{id}/update`（`2026-07-29.preview`）と `approval_required`
+2. `POST /v2/core/approval_requests/{id}/update`（`2026-09-30.preview`）と `approval_required`
    本文の実挙動（旧記述の `/submit` + `2026-06-24.preview` から訂正）。webhook は 7 種
    （created/approved/succeeded/rejected/canceled/expired/failed）。
 3. qm を実キー（モデルキー＋Stripe service credential）＋`api.stripe.com` への egress ありで

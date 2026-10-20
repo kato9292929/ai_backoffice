@@ -56,15 +56,32 @@ export const config = {
     return required('STRIPE_WEBHOOK_SECRET');
   },
 
-  /** Preview API version required by the v2 approval endpoints (the
-   * approval_request update endpoint). Per current Stripe docs. */
-  previewVersion: optional('STRIPE_PREVIEW_VERSION', '2026-07-29.preview'),
+  /** Preview API version required by the v2 approval endpoints (update /
+   * list / retrieve / cancel). Default follows the "Set up two-party approvals"
+   * sample as of 2026-10-20; override with STRIPE_PREVIEW_VERSION. */
+  previewVersion: optional('STRIPE_PREVIEW_VERSION', '2026-09-30.preview'),
+
+  /** Which path attaches the justification. The guide shows
+   * `/v2/core/approval_requests/{id}/update`; the API reference shows
+   * `POST /v2/core/approval_requests/{id}`. `auto` tries the guide path and
+   * falls back to the reference path on a route-level 404. */
+  approvalUpdatePath: optional('STRIPE_APPROVAL_UPDATE_PATH', 'auto') as
+    | 'auto'
+    | 'update'
+    | 'id',
+
+  /** Opt-in 4th scenario: compensate via customer balance credit (M8). */
+  enableBalanceCompensation:
+    optional('ENABLE_BALANCE_COMPENSATION', 'false').toLowerCase() === 'true',
+
+  /** Stripe MCP endpoint (M10). Authenticated with the agent key as Bearer. */
+  mcpUrl: optional('STRIPE_MCP_URL', 'https://mcp.stripe.com'),
 
   webhookPort: Number(optional('WEBHOOK_PORT', '4242')),
 
   /** JPY threshold above which a refund requires approval (matches M2 rule). */
   refundApprovalThresholdJpy: Number(
-    optional('REFUND_APPROVAL_THRESHOLD_JPY', '10000'),
+    optional('REFUND_APPROVAL_THRESHOLD_JPY', '1000'),
   ),
 
   /** Pinned stable API version for the SDK (v1 operations / seeding). Kept in
@@ -72,4 +89,6 @@ export const config = {
   apiVersion: '2025-02-24.acacia' as const,
 } as const;
 
-export const STRIPE_API_BASE = 'https://api.stripe.com';
+/** Overridable only to point the raw-HTTP paths at a local mock for offline
+ * checks; the SDK (seed) always talks to Stripe. */
+export const STRIPE_API_BASE = process.env.STRIPE_API_BASE_URL?.trim() || 'https://api.stripe.com';

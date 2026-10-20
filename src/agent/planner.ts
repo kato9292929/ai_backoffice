@@ -2,6 +2,7 @@ import type { ActionPlan, ActionType, Inquiry } from '../types.js';
 import {
   chargeForCustomer,
   customerId,
+  invoiceForCustomer,
   subscriptionForCustomer,
   type SeedManifest,
 } from '../manifest.js';
@@ -19,28 +20,40 @@ import {
  * ActionPlan shape and the rest of the pipeline is unaffected.
  */
 
+/** Every "12,345円" style amount in Japanese text, in order of appearance. */
+export function extractAllYen(text: string): number[] {
+  const out: number[] = [];
+  for (const m of text.matchAll(/([0-9０-９][0-9０-９,，]*)\s*円/g)) {
+    const normalized = m[1]!
+      .replace(/[０-９]/g, (d) => String('０１２３４５６７８９'.indexOf(d)))
+      .replace(/[,，]/g, '');
+    const n = Number(normalized);
+    if (Number.isFinite(n)) out.push(n);
+  }
+  return out;
+}
+
 /** Extract the first "12,345円" style amount from Japanese text. */
 export function extractYen(text: string): number | undefined {
-  const m = text.match(/([0-9０-９][0-9０-９,，]*)\s*円/);
-  if (!m) return undefined;
-  const normalized = m[1]!
-    .replace(/[０-９]/g, (d) => String('０１２３４５６７８９'.indexOf(d)))
-    .replace(/[,，]/g, '');
-  const n = Number(normalized);
-  return Number.isFinite(n) ? n : undefined;
+  return extractAllYen(text)[0];
 }
 
 /**
  * Classify the action. Order matters: "解約" (cancel) is checked before "返金"
  * (refund) because a cancellation inquiry often mentions "日割り返金は不要"
  * (no pro-rated refund needed), which must NOT be read as a refund request.
+ * Likewise the balance-compensation inquiry says "返金ではなく", so credit
+ * note / balance are matched before refund.
  */
 export function classifyAction(text: string): ActionType {
   if (/(解約|契約.*(止め|停止)|次回以降の請求を止め)/.test(text)) {
     return 'cancel_subscription';
   }
-  if (/(請求書|インボイス|発行してください)/.test(text)) {
-    return 'create_invoice';
+  if (/(クレジットノート|減額)/.test(text)) {
+    return 'create_credit_note';
+  }
+  if (/(残高|次回の請求から差し引|差し引く形)/.test(text)) {
+    return 'create_balance_transaction';
   }
   if (/(メタデータ|部署|表記|登録.*変更)/.test(text) && !/返金|請求書/.test(text)) {
     return 'update_customer_metadata';
@@ -99,22 +112,44 @@ export function plan(inquiry: Inquiry, manifest: SeedManifest): ActionPlan {
         expectedGated: true,
       };
     }
-    case 'create_invoice': {
-      const amount = textAmount ?? 30000;
+    case 'create_credit_note': {
+      const invoice = invoiceForCustomer(manifest, inquiry.customerRef);
+      // The inquiry quotes the invoice total first and the amount to credit
+      // last ("30,000円 … 15,000円を減額"), so take the last amount.
+      const amounts = extractAllYen(inquiry.text);
+      const amount = amounts[amounts.length - 1] ?? invoice.amount;
       return {
         action,
-        targetId: customer.id, // invoice is created for the customer
+        targetId: invoice.id,
         amount,
+        currency: invoice.currency,
+        rationale: {
+          customerId: customer.id,
+          reasonCode: 'service_not_delivered',
+          summary:
+            '請求済み作業の一部が未実施（当社都合で中止）。未実施分の減額が妥当と判断。',
+        },
+        params: {
+          reason: 'order_change',
+          description: '未実施分の減額（オンサイト対応1日分）',
+        },
+        expectedGated: true,
+      };
+    }
+    case 'create_balance_transaction': {
+      const amount = textAmount ?? 2000;
+      return {
+        action,
+        targetId: customer.id, // the balance belongs to the customer
+        amount, // positive here; execute() sends it as a negative (credit) entry
         currency: 'jpy',
         rationale: {
           customerId: customer.id,
-          reasonCode: 'agreed_service_fee',
-          summary: '見積り合意済みの追加作業費用の請求書発行。',
+          reasonCode: 'service_outage_compensation',
+          summary:
+            'サービス障害による利用不能期間の補償。顧客の希望により返金ではなく次回請求からの差し引き（残高付与）とする。',
         },
-        params: {
-          description: '初期設定 追加サポート費用',
-          daysUntilDue: 7,
-        },
+        params: { description: 'サービス障害の補償（次回請求から差し引き）' },
         expectedGated: true,
       };
     }

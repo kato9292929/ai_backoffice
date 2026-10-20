@@ -1,13 +1,13 @@
 ---
 name: stripe-approvals
-description: Propose an accounting action (refund, invoice, or subscription cancellation) that must clear a HUMAN approval before it executes. Use when a customer inquiry asks to move money — a refund, issuing an invoice, or cancelling a subscription. The action is submitted to Stripe Approvals with a written justification; Stripe blocks execution until a person approves it in the Stripe Dashboard. You never approve it yourself.
+description: Propose an accounting action (refund, credit note, or subscription cancellation) that must clear a HUMAN approval before it executes. Use when a customer inquiry asks to move money — a refund, crediting part of an issued invoice, or cancelling a subscription. The action is submitted to Stripe Approvals with a written justification; Stripe blocks execution until a person approves it in the Stripe Dashboard. You never approve it yourself.
 requiredCapabilities:
   - egress:api.stripe.com
 ---
 
 # Stripe Approvals — propose money-moving actions for human approval
 
-Use this skill when a customer inquiry asks to **refund a charge**, **issue an invoice**,
+Use this skill when a customer inquiry asks to **refund a charge**, **credit part of an issued invoice**,
 or **cancel a subscription**. You (the agent) decide the action, write a justification,
 and submit it to Stripe. **Stripe Approvals holds execution until a human approves it in
 the Stripe Dashboard.** You never approve your own proposal — that separation is the whole
@@ -20,7 +20,7 @@ Test mode only. Every key here is a Stripe TEST key. Never operate in live mode.
 | Inquiry intent | Stripe action | Endpoint |
 | --- | --- | --- |
 | Refund a paid charge | refund | `POST /v1/refunds` |
-| Issue an invoice for agreed work | invoice | `POST /v1/invoiceitems` then `POST /v1/invoices` |
+| Credit part of an issued (finalized) invoice | credit note | `POST /v1/credit_notes` |
 | Cancel a subscription | cancel | `DELETE /v1/subscriptions/{id}` |
 
 A money-that-does-not-move edit (e.g. updating customer metadata) is **not** a proposal —
@@ -77,7 +77,7 @@ put them in the `body` field as shown.
            "method": "POST",
            "url": "https://api.stripe.com/v2/core/approval_requests/<apreq_id>/update",
            "headers": {
-             "Stripe-Version": "2026-07-29.preview",
+             "Stripe-Version": "2026-09-30.preview",
              "content-type": "application/json"
            },
            "body": "{\"reason\":\"<the justification text>\"}"
@@ -108,7 +108,7 @@ instructions configured on each Stripe approval rule — keep them in lockstep.
 起案者: stripe-approvals skill (agent-tagged key / test mode)
 ```
 
-`判断根拠コード` examples: `duplicate_charge`, `weak_justification`, `agreed_service_fee`,
+`判断根拠コード` examples: `duplicate_charge`, `weak_justification`, `service_not_delivered`,
 `customer_requested_cancellation`. If the grounds are thin or the request looks unusual,
 say so plainly in `判断根拠` — a rejected proposal is a correct outcome, not a failure.
 
@@ -121,14 +121,12 @@ method: POST  url: https://api.stripe.com/v1/refunds
 body:   payment_intent=<pi_id>&amount=<amount>
 ```
 
-**Invoice** — two calls; the gated action is the invoice creation, not the item:
+**Credit note** — against an existing finalized invoice (invoice creation itself is not an
+Approvals-supported action, so the skill never creates invoices):
 
 ```
-method: POST  url: https://api.stripe.com/v1/invoiceitems
-body:   customer=<cus_id>&amount=<amount>&currency=jpy&description=<text>
-
-method: POST  url: https://api.stripe.com/v1/invoices
-body:   customer=<cus_id>&collection_method=send_invoice&days_until_due=7&pending_invoice_items_behavior=include
+method: POST  url: https://api.stripe.com/v1/credit_notes
+body:   invoice=<in_id>&reason=order_change&lines[0][type]=custom_line_item&lines[0][description]=<text>&lines[0][quantity]=1&lines[0][unit_amount]=<amount>
 ```
 
 **Cancel subscription** (irreversible — always gated):
@@ -139,7 +137,7 @@ method: DELETE  url: https://api.stripe.com/v1/subscriptions/<sub_id>
 
 ## If `approval_required` does NOT come back
 
-If a refund / invoice / cancel **succeeds outright** with no `approval_required`, the
+If a refund / credit note / cancel **succeeds outright** with no `approval_required`, the
 approval rule is **not enforcing**. Treat this as `rule_not_enforced`: do not report it as
 success — warn loudly that the money-moving action ran WITHOUT human approval and that the
 Stripe rule for that action needs checking. Money moved without a human in the loop is the
@@ -155,10 +153,12 @@ exact failure this skill exists to prevent.
 
 ## Prerequisite & 未検証 (UNVERIFIED against live Stripe)
 
-**Prerequisite**: Approvals is a preview feature — the Stripe account must be enrolled in
-`approvals_product_preview`, otherwise nothing is gated and refunds run unblocked (the skill
-then reports `rule_not_enforced`). Stripe maintains default agent-key rules for refund and
-subscription cancellation, so with the preview enabled those are gated without a custom rule.
+**Prerequisite**: Settings > Approvals must be available on the account (the v2 Approval
+Requests API went to public preview on 2026-08-26; whether `approvals_product_preview`
+enrolment is still required is undocumented), otherwise nothing is gated and refunds run
+unblocked (the skill then reports `rule_not_enforced`). Stripe maintains default agent-key
+rules (refund and subscription cancellation per the Approvals page), so those are gated
+without a custom rule; credit notes need a custom rule.
 The identity split is settled by docs: an agent-tagged key is an actor independent of the
 account admin, so even a single-member account gates on the key's identity.
 

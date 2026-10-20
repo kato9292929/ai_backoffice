@@ -29,6 +29,15 @@ export interface ChargeSeed {
   currency: string;
   note: string;
 }
+/** A finalized (open) invoice a credit note can be issued against (M8). */
+export interface InvoiceSeed {
+  handle: string;
+  id: string;
+  customerHandle: string;
+  amount: number;
+  currency: string;
+  note: string;
+}
 export interface SeedManifest {
   createdAt: string;
   livemode: false;
@@ -36,6 +45,8 @@ export interface SeedManifest {
   prices: PriceSeed[];
   subscriptions: SubscriptionSeed[];
   charges: ChargeSeed[];
+  /** Absent in manifests written before M8 — re-run `npm run seed`. */
+  invoices?: InvoiceSeed[];
 }
 
 export const SEED_PATH = 'fixtures/seeded.json';
@@ -56,12 +67,18 @@ export function customerId(m: SeedManifest, handle: string): CustomerSeed {
   return c;
 }
 
-/** First refundable charge for a customer handle. */
+/** Charge reserved for the runaway / route-comparison scenarios (M9/M10):
+ * many small partial refunds are drawn from it, so fixtures stay untouched. */
+export const POOL_CHARGE_HANDLE = 'runaway-pool';
+
+/** First refundable fixture charge for a customer handle (pool excluded). */
 export function chargeForCustomer(
   m: SeedManifest,
   customerHandle: string,
 ): ChargeSeed {
-  const ch = m.charges.find((x) => x.customerHandle === customerHandle);
+  const ch = m.charges.find(
+    (x) => x.customerHandle === customerHandle && x.handle !== POOL_CHARGE_HANDLE,
+  );
   if (!ch)
     throw new Error(`no seeded charge for customer handle "${customerHandle}"`);
   return ch;
@@ -78,4 +95,25 @@ export function subscriptionForCustomer(
       `no seeded subscription for customer handle "${customerHandle}"`,
     );
   return s;
+}
+
+/** Charge by seed handle. */
+export function chargeByHandle(m: SeedManifest, handle: string): ChargeSeed {
+  const ch = m.charges.find((x) => x.handle === handle);
+  if (!ch)
+    throw new Error(`no seeded charge "${handle}" — re-run \`npm run seed\` (M8+)`);
+  return ch;
+}
+
+/** Open invoice for a customer handle (credit note target). */
+export function invoiceForCustomer(
+  m: SeedManifest,
+  customerHandle: string,
+): InvoiceSeed {
+  const inv = m.invoices?.find((x) => x.customerHandle === customerHandle);
+  if (!inv)
+    throw new Error(
+      `no seeded invoice for customer handle "${customerHandle}" — re-run \`npm run seed\` (M8+)`,
+    );
+  return inv;
 }
