@@ -62,15 +62,37 @@
 
 | # | 項目 | 状態 | 流すコマンド |
 |---|---|---|---|
-| B-0 | Settings > Approvals が出ているか（public preview 化で登録不要になったか） | ⏳ | 本人の目視（スクショ） |
+| B-0 | Settings > Approvals が出ているか（public preview 化で登録不要になったか） | ✅ 2026-10-21 | 本人のスクショで確認（下の記録） |
 | B-2 | approval_required の形 | ⏳ | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required --last=1` |
 | B-4 | update（`2026-09-30.preview`）の要求/応答、通ったパス | ⏳ | `npm run evidence -- --kind=approval_update --last=1` |
 | B-5 | webhook 7種（expired は cancel の canceled で代替） | ⏳ | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
 | B-6 | クレジットノートのルールで approval_required が返るか | ⏳ | `npm run propose -- --only=INQ-004` |
-| B-7 | デフォルトルールの実際の中身 | ⏳ | 本人の目視（スクショ）+ `npm run status` の観測ルール名 |
+| B-7 | デフォルトルールの実際の中身 | ✅ 2026-10-21 | 本人のスクショで確認（下の記録） |
 | B-9 | Block 時のエラーの形 | ⏳ | `npm run demo:runaway -- --count=5 --interval=10 --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
 | B-10 | x402 の返金が返金ルールに掛かるか | ⛔ | M11 停止中（§3） |
 | M10 | CLI / MCP 経路の差 | ⏳ | `npm run demo:mcp -- --amount=1500` → `logs/route-compare.jsonl` |
+
+### B-0 / B-7（2026-10-21、本人の Dashboard スクショ）
+
+対象: sandbox「x402」（Test mode）、Settings > Approvals > Rules。API は叩いていない（キー未設定）ので生レスポンスは無い。
+
+- **B-0 ✅**: Settings > Approvals（Rules / Requests タブ、Create rule ボタン）が表示される。
+  `approvals_product_preview` への個別登録の有無はこの画面からは分からないが、少なくともこの sandbox では使える状態。
+- **B-7 ✅**: Stripe が入れたルールは2件だけ（Last author = Stripe、作成 2026-10-21 5:29 PM、どちらも Active）。
+  | Rule name | 条件 | 制御（画面の表記） | Reviewers |
+  |---|---|---|---|
+  | Refund created | Actor equal to Agent key | Submit for approval | Analyst +2 more（ロール指定） |
+  | Subscription canceled | Actor equal to Agent key | Submit for approval | Analyst +2 more（ロール指定） |
+
+  payouts・アカウント設定変更のルールは**入っていない**。→ Approvals ページの記述（返金の作成・サブスクの解約）が正しく、
+  API keys ページの記述（payouts, refunds, account configuration changes）とは一致しない。
+- 画面の表記とドキュメントの対応: 制御「**Submit for approval**」= ドキュメントの「Require approval」。Actor の値は「**Agent key**」
+  （ドキュメントは「agent-tagged API keys」）。
+- メンバー1人のアカウントでは条件の画面に注記が出る:「You're the only user on this account, so approval rules can only apply to
+  requests made with an agent key.」（ドキュメントの「Accounts with a single team member」と一致）
+- **デモに効く点**: デフォルト2件のレビュアーはロール指定（Analyst +2 more）。ドキュメント上メール通知は個人指定のメンバーにしか
+  届かないため、デフォルト2件にも本人を個人として追加する必要がある。
+- 作成日時がルール作成の起点（初めての agent キー作成）と思われるが、キー一覧は未確認。
 
 ### 追記の書式
 

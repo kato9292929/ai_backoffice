@@ -98,7 +98,8 @@ rate limit + **Block** ルールで止まることも見せる。
 ## 承認フローの制約（押さえておくこと）
 
 - **Approval Requests v2 API は 2026-08-26 に public preview**。`approvals_product_preview`
-  への登録が今も必要かは**ドキュメントに記載がない**（B-0 としてライブ確認）。
+  への登録が今も必要かは**ドキュメントに記載がない**。2026-10-21、sandbox で Settings > Approvals が
+  表示されることは確認済み（B-0）。
   Settings > Approvals が出ない場合、gated アクションは素通りし、コードは
   `rule_not_enforced` を警告する。
 - **理由文の付与は update**：`approval_required` が返ると Stripe が承認要求を
@@ -116,7 +117,11 @@ rate limit + **Block** ルールで止まることも見せる。
   選ぶと付く。secret key には付かない。
 - **デフォルトルール**: agent タグ付きキーには Stripe 管理のデフォルトルールがある。
   ただし内容がページ間で揃っていない（Approvals ページ=返金の作成・サブスクの解約、
-  API keys ページ=payouts・refunds・アカウント設定変更）。実際の中身はライブで確認する（B-7）。
+  API keys ページ=payouts・refunds・アカウント設定変更）。**実際に入っていたのは返金の作成とサブスクの解約の2件だけ**
+  （2026-10-21 確認、B-7）。どちらも条件は Actor = Agent key、レビュアーはロール指定（Analyst ほか）なので、
+  メール通知を受けるには本人を個人として追加する。
+- **画面の表記**: 制御「Submit for approval」がドキュメントの「Require approval」、Actor の値「Agent key」が
+  「agent-tagged API keys」にあたる。
 - **単一メンバーのアカウントでも成立**：agent-tagged key は管理者と独立した actor なので、
   actor 条件を `agent-tagged API keys` にしたルールは1人のアカウントでも保存でき、
   起案=agent / 承認=人間 の分離が成り立つ。
@@ -264,22 +269,22 @@ HTTP ステータス/エラー本文をそのまま記録する。結果は
 
 | # | 未検証項目 | 依存するコード | 確認方法 |
 |---|---|---|---|
-| B-0 | Settings > Approvals が出るか（public preview 化で preview 登録が不要になったか） | 全体 | Dashboard で目視 |
 | B-2 | `approval_required` の本文形状（`error.approval_request.{id,action,status,dashboard_url,expires_at}`） | `src/stripe-client.ts` `parseApprovalRequiredBody` | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required` |
 | B-4 | 理由文 update（`2026-09-30.preview`）の要求/応答形状と、通るパス（`/update` か `/{id}` か） | `src/stripe-client.ts` `updateApprovalRequest` | `npm run evidence -- --kind=approval_update`（note に試したパスと結果） |
 | B-5 | `v2.core.approval_request.*` webhook（7種）の受信と thin event の形状 | `src/webhook.ts` | 承認・却下・`npm run approvals:cancel` で canceled。expired は14日待てないので canceled で代替 |
 | B-6 | クレジットノート発行に付けたルールで `approval_required` が返るか | `src/agent/execute.ts`（credit note） | `npm run propose -- --only=INQ-004` |
-| B-7 | agent タグ付きキーを初めて作ったときに入る**デフォルトルールの実際の中身** | `docs/APPROVAL_RULES.md` | Settings > Approvals > Rules を目視（スクショ） |
 | B-8 | Stripe agent skills（`stripe-docs` 等）の導入 | — | 導入可能環境で https://docs.stripe.com/skills |
 | B-9 | Block で拒否されたときのエラーの形 | `src/stripe-client.ts` `detectBlock` | `npm run demo:runaway -- --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
 | B-10 | ステーブルコインの PaymentIntent への返金が Approvals の返金ルールに同じように掛かるか | M11（未実装） | M11 再開後 |
 
-**ドキュメントで消化済み（ライブ確認は不要）**
+**消化済み**
 
 | # | 項目 | 根拠 |
 |---|---|---|
 | ~~B-1~~ | agent-key の身元判定：単一メンバーのアカウントでも agent-tagged key は管理者と独立した actor | Approvals ページ「Accounts with a single team member」 |
 | ~~旧 B-6~~ | 承認→自動実行時に pending invoice item が請求書へ取り込まれるか → **対象外**（請求書の作成は承認対象の操作ではない） | Approvals ページ「Supported actions」 |
+| ~~B-0~~ | Settings > Approvals が出るか → **出る**（2026-10-21、sandbox） | 本人のスクショ（`docs/live-verification.md`） |
+| ~~B-7~~ | デフォルトルールの中身 → **返金の作成・サブスクの解約の2件のみ**（Actor = Agent key、Submit for approval、レビュアーはロール指定） | 同上。ライブ確認 |
 | ~~旧 B-7~~ | 請求書作成が agent-key デフォルトルールの対象か → **対象外**（同上） | 同上 |
 
 ---
