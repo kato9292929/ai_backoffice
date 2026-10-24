@@ -248,10 +248,12 @@ export async function updateApprovalRequest(
   return { ...last!, pathUsed: order[order.length - 1]!, attempts };
 }
 
-/** Retrieve one approval request (used on webhook terminal events). */
+/** Retrieve one approval request (used on webhook terminal events).
+ * Live (2026-10-24): only the API key that created the request may read it —
+ * the account secret key gets 403 `not_authorized` — so default to the agent key. */
 export function retrieveApprovalRequest(
   approvalRequestId: string,
-  key: string = config.secretKey,
+  key: string = config.agentKey,
 ): Promise<RawResponse> {
   return v2Request('GET', `/v2/core/approval_requests/${encodeURIComponent(approvalRequestId)}`, {
     key,
@@ -271,9 +273,10 @@ export function cancelApprovalRequest(
   );
 }
 
-/** List every approval request (follows next_page_url). */
+/** List every approval request (follows next_page_url). Scoped to the
+ * requesting key (live: the secret key lists none of the agent's requests). */
 export async function listApprovalRequests(
-  key: string = config.secretKey,
+  key: string = config.agentKey,
   maxPages = 20,
 ): Promise<{ ok: true; data: any[] } | { ok: false; response: RawResponse }> {
   const data: any[] = [];

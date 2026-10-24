@@ -60,7 +60,7 @@ const EXPECTED_RESULT: Partial<Record<ActionType, string>> = {
   create_refund: 'refund',
   create_credit_note: 'credit_note',
   create_balance_transaction: 'customer_balance_transaction',
-  cancel_subscription: 'subscription',
+  cancel_subscription: 'subscription', // live action name: subscription.update
 };
 
 /** Read the executed object from an approval request (current + deprecated field). */

@@ -16,6 +16,7 @@
     "demo:runaway": "tsx src/runaway.ts",
     "demo:mcp": "tsx src/routes.ts",
     "audit": "tsx src/audit.ts",
+    "reconcile": "tsx src/reconcile.ts",
     "evidence": "tsx src/evidence.ts",
     "approvals:cancel": "tsx src/cancel.ts",
     "x402:check": "tsx src/x402-check.ts",

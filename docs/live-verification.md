@@ -65,7 +65,7 @@
 | B-0 | Settings > Approvals が出ているか（public preview 化で登録不要になったか） | ✅ 2026-10-21 | 本人のスクショで確認（下の記録） |
 | B-2 | approval_required の形 | ✅ 2026-10-24（差分あり） | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required --last=1` |
 | B-4 | update（`2026-09-30.preview`）の要求/応答、通ったパス | ✅ 2026-10-24（`/{id}` が正、`/update` は 404） | `npm run evidence -- --kind=approval_update --last=1` |
-| B-5 | webhook 7種（expired は cancel の canceled で代替） | 一部 ✅（created / canceled） | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
+| B-5 | webhook 7種（expired は cancel の canceled で代替） | 5種 ✅（created / approved / rejected / canceled / succeeded）、failed・expired 待ち | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
 | B-6 | クレジットノートのルールで approval_required が返るか | ⏳ | `npm run propose -- --only=INQ-004` |
 | B-7 | デフォルトルールの実際の中身 | ✅ 2026-10-21 / 更新 2026-10-24（アカウントにより2件または3件） | 本人のスクショで確認（下の記録） |
 | B-9 | Block 時のエラーの形 | ⏳ | `npm run demo:runaway -- --count=5 --interval=10 --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
@@ -159,6 +159,28 @@ HTTP 403
 - `created`: 4件届いた。ただし**起案と同じ秒に届き、監査ログ書き込みより先に着く**ため、webhook が記録を見つけられず捨てていた
   → 最大6秒待って再確認するよう修正。
 - approved / rejected / succeeded / failed: 本人の承認・却下の後に確認する。expired は24時間で起きるはずなので、放置した1件で確認できる見込み。
+
+### 2026-10-24 — 本人の承認・却下の結果（B-5 続き）
+
+本人が 09:51 UTC に Dashboard で操作。その時点でコンテナが再起動しており、`stripe listen` と webhook サーバーは止まっていた
+（イベントは手元に届いていない）。`GET /v2/core/events`（secret key）で発行を確認し、`npm run reconcile` で監査ログに反映した。
+
+| fixture | 操作 | 発行されたイベント（GET /v2/core/events） | 最終状態 / 実行結果 |
+|---|---|---|---|
+| INQ-005 解約 | 承認 | `approved` 09:51:07 → `succeeded` 09:51:08（同時に v1 `customer.subscription.deleted`） | succeeded / `subscription` sub_1UTyQI… |
+| INQ-003 返金 ¥5,000 | 却下 | `rejected` 09:51:11 | rejected（返金なし） |
+| INQ-002 返金 ¥80,000 | 承認 | `approved` 09:51:14 → `succeeded` 09:51:15（v1 `refund.created`） | succeeded / `refund` re_3UTyQR… |
+| INQ-001 返金 ¥3,300 | 承認 | `approved` 09:51:17 → `succeeded` 09:51:18（v1 `refund.created`） | succeeded / `refund` re_3UTzoo… |
+
+- 承認から実行まで約1秒。`approved` と `succeeded` は別イベントとして出る（ドキュメントどおり）。
+- **解約の action 名は `subscription.update`**（cancel ではない）。
+- **approval request の取得・一覧は起案したキーでしかできない**: secret key で retrieve すると
+  403 相当の `not_authorized`「Only the API key that created this request can perform this action.」、list は 0 件。
+  agent key では5件すべて見える → retrieve / list の既定キーを agent key に変更。
+- 各リクエストの `rule.name` は Refund created / Subscription canceled（デフォルトルール名）。
+- B-5 の残り: `failed`（未発生）、`expired`（24時間で起きる見込み）。7種のうち created / approved / rejected / canceled / succeeded の
+  5種の発行を確認（approved / rejected / succeeded は配送ではなく events API での確認）。
+- 監査ログに INQ-001 の `rule_not_enforced` が残るのは 06:28 のルール作成前の実行分。
 
 ### 追記の書式
 
