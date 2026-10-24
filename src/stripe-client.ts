@@ -138,18 +138,20 @@ export function parseApprovalRequired(
 export function parseApprovalRequiredBody(body: any): ApprovalRequestRef | null {
   const err = body?.error;
   if (!err) return null;
+  // Live shape (2026-10-24, HTTP 403): a flat `error.approval_request_id`
+  // string. The nested `error.approval_request` object is the shape the
+  // earlier docs implied; still accepted in case it appears.
   const ar = err.approval_request;
+  const id: string | undefined = ar?.id ?? err.approval_request_id;
   const looksLikeApproval =
-    err.code === 'approval_required' ||
-    err.type === 'approval_required' ||
-    !!ar;
-  if (!looksLikeApproval || !ar) return null;
+    err.code === 'approval_required' || err.type === 'approval_required' || !!id;
+  if (!looksLikeApproval || !id) return null;
   return {
-    id: ar.id,
-    action: ar.action ?? 'unknown',
-    status: ar.status ?? 'unknown',
-    dashboardUrl: ar.dashboard_url,
-    expiresAt: ar.expires_at,
+    id,
+    action: ar?.action ?? 'unknown',
+    status: ar?.status ?? 'unknown',
+    dashboardUrl: ar?.dashboard_url,
+    expiresAt: ar?.expires_at,
   };
 }
 
@@ -215,7 +217,8 @@ export interface UpdateResult extends RawResponse {
  *   - Set up two-party approvals: POST /v2/core/approval_requests/{id}/update
  *   - API reference (Update an Approval Request): POST /v2/core/approval_requests/{id}
  * Both use Stripe-Version 2026-09-30.preview and a JSON `{ "reason" }` body.
- * In `auto` mode we try the guide path first and fall back to the reference
+ * Live (2026-10-24): the reference path answers 200, the guide path 404. In
+ * `auto` mode we try the reference path first and fall back to the guide
  * path only on a route-level 404 (a 404 whose code is not
  * `approval_request_not_found`, which would mean the id itself is unknown).
  */
@@ -231,7 +234,7 @@ export async function updateApprovalRequest(
       ? [refPath]
       : config.approvalUpdatePath === 'update'
         ? [guidePath]
-        : [guidePath, refPath];
+        : [refPath, guidePath]; // live 2026-10-24: refPath 200, guidePath 404
 
   const attempts: UpdateResult['attempts'] = [];
   let last: RawResponse | undefined;

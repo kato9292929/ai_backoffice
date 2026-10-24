@@ -110,8 +110,19 @@ export async function attachJustification(
     return { ok: false, approval, errorSummary: `update failed: HTTP ${updated.status}` };
   }
   log.ok(`  attached justification via ${updated.pathUsed} (HTTP ${updated.status})`);
-  const status = (updated.body?.status as string | undefined) ?? approval.status;
-  return { ok: true, approval: { ...approval, status } };
+  // The live approval_required error carries only the id, so take action /
+  // status / dashboard_url / expires_at from the returned approval request.
+  const b = updated.body ?? {};
+  return {
+    ok: true,
+    approval: {
+      ...approval,
+      action: b.action ?? approval.action,
+      status: b.status ?? approval.status,
+      dashboardUrl: b.dashboard_url ?? approval.dashboardUrl,
+      expiresAt: b.expires_at ?? approval.expiresAt,
+    },
+  };
 }
 
 export async function proposeForInquiry(

@@ -56,8 +56,8 @@ rate limit + **Block** ルールで止まることも見せる。
         │
         ▼ (approval_required のとき)
  理由文の update（Stripe-Version: 2026-09-30.preview）
-   POST /v2/core/approval_requests/{id}/update   ← ガイドの記述
-   POST /v2/core/approval_requests/{id}          ← API リファレンスの記述（404 時に自動フォールバック）
+   POST /v2/core/approval_requests/{id}          ← API リファレンスの記述（ライブで 200）
+   POST /v2/core/approval_requests/{id}/update   ← ガイドの記述（ライブで 404。フォールバック用）
         │
         ▼
  Stripe Dashboard > Settings > Approvals > Requests  ── 人間が承認/却下 ──┐
@@ -105,9 +105,12 @@ rate limit + **Block** ルールで止まることも見せる。
 - **理由文の付与は update**：`approval_required` が返ると Stripe が承認要求を
   自動的にレビューへ提出する。エージェントは `reason` を後付けするだけ。
   `Stripe-Version` は `2026-09-30.preview`（`STRIPE_PREVIEW_VERSION` で上書き可）。
-  パスはドキュメント間で食い違っている（ガイド=`/{id}/update`、API リファレンス=`/{id}`）
-  ため、既定ではガイドのパスを試し、ルートが無い 404 のときだけリファレンスのパスに
-  切り替える（`STRIPE_APPROVAL_UPDATE_PATH=auto|update|id`）。どちらで通ったかを記録する（B-4）。
+  パスはドキュメント間で食い違っている（ガイド=`/{id}/update`、API リファレンス=`/{id}`）。
+  **ライブでは `/{id}` が 200、`/update` は 404**（2026-10-24、B-4）。既定はリファレンスのパスを使い、
+  ルートが無い 404 のときだけガイドのパスを試す（`STRIPE_APPROVAL_UPDATE_PATH=auto|update|id`）。
+- **approval_required の実際の形**（2026-10-24、B-2）: HTTP 403、`error.code = approval_required`、id は
+  フラットな `error.approval_request_id`（dashboard_url などは付かない。update の応答から取る）。
+- **承認期限**: ライブの `expires_at` は作成の **24時間後**だった（ガイドは14日）。承認は24時間以内に押す。
 - **ルールの条件は amount / actor / rate limit の3種**、`and` / `or` で組み合わせ可。
   **制御は Require approval か Block の2種で、1ルールに1つ**。**同じ操作に有効なルールは
   1つだけ**。ルール作成は Dashboard から（ルールの API はドキュメントに無い）。
@@ -269,8 +272,6 @@ HTTP ステータス/エラー本文をそのまま記録する。結果は
 
 | # | 未検証項目 | 依存するコード | 確認方法 |
 |---|---|---|---|
-| B-2 | `approval_required` の本文形状（`error.approval_request.{id,action,status,dashboard_url,expires_at}`） | `src/stripe-client.ts` `parseApprovalRequiredBody` | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required` |
-| B-4 | 理由文 update（`2026-09-30.preview`）の要求/応答形状と、通るパス（`/update` か `/{id}` か） | `src/stripe-client.ts` `updateApprovalRequest` | `npm run evidence -- --kind=approval_update`（note に試したパスと結果） |
 | B-5 | `v2.core.approval_request.*` webhook（7種）の受信と thin event の形状 | `src/webhook.ts` | 承認・却下・`npm run approvals:cancel` で canceled。expired は14日待てないので canceled で代替 |
 | B-6 | クレジットノート発行に付けたルールで `approval_required` が返るか | `src/agent/execute.ts`（credit note） | `npm run propose -- --only=INQ-004` |
 | B-8 | Stripe agent skills（`stripe-docs` 等）の導入 | — | 導入可能環境で https://docs.stripe.com/skills |
@@ -283,6 +284,8 @@ HTTP ステータス/エラー本文をそのまま記録する。結果は
 |---|---|---|
 | ~~B-1~~ | agent-key の身元判定：単一メンバーのアカウントでも agent-tagged key は管理者と独立した actor | Approvals ページ「Accounts with a single team member」 |
 | ~~旧 B-6~~ | 承認→自動実行時に pending invoice item が請求書へ取り込まれるか → **対象外**（請求書の作成は承認対象の操作ではない） | Approvals ページ「Supported actions」 |
+| ~~B-2~~ | approval_required の形 → HTTP 403、`error.approval_request_id`（フラット）。ネストしたオブジェクトは無い | ライブ（`docs/live-verification.md`） |
+| ~~B-4~~ | 理由文 update → `POST /v2/core/approval_requests/{id}` が 200、`/update` は 404。`2026-09-30.preview` で通る | 同上 |
 | ~~B-0~~ | Settings > Approvals が出るか → **出る**（2026-10-21、sandbox） | 本人のスクショ（`docs/live-verification.md`） |
 | ~~B-7~~ | デフォルトルールの中身 → **返金の作成・サブスクの解約の2件のみ**（Actor = Agent key、Submit for approval、レビュアーはロール指定） | 同上。ライブ確認 |
 | ~~旧 B-7~~ | 請求書作成が agent-key デフォルトルールの対象か → **対象外**（同上） | 同上 |

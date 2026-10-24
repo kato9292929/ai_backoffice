@@ -63,8 +63,9 @@ export const config = {
 
   /** Which path attaches the justification. The guide shows
    * `/v2/core/approval_requests/{id}/update`; the API reference shows
-   * `POST /v2/core/approval_requests/{id}`. `auto` tries the guide path and
-   * falls back to the reference path on a route-level 404. */
+   * `POST /v2/core/approval_requests/{id}` — live (2026-10-24) only the latter
+   * works. `auto` tries the reference path, falling back to the guide path on
+   * a route-level 404. */
   approvalUpdatePath: optional('STRIPE_APPROVAL_UPDATE_PATH', 'auto') as
     | 'auto'
     | 'update'

@@ -103,7 +103,14 @@ async function handleEvent(evt: any): Promise<void> {
   }
   const { status, finalResult } = classifyEvent(type);
 
-  const prior = findByApprovalId(approvalId);
+  // `created` fires within the same second as the agent's request — usually
+  // before propose has written its audit record (seen live 2026-10-24) — so
+  // give the proposer a few seconds before giving up.
+  let prior = findByApprovalId(approvalId);
+  for (let i = 0; !prior && i < 3; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    prior = findByApprovalId(approvalId);
+  }
   if (!prior) {
     log.warn(
       `no audit record for approval ${approvalId} (proposed in another run?). ` +

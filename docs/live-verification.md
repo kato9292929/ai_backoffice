@@ -63,11 +63,11 @@
 | # | 項目 | 状態 | 流すコマンド |
 |---|---|---|---|
 | B-0 | Settings > Approvals が出ているか（public preview 化で登録不要になったか） | ✅ 2026-10-21 | 本人のスクショで確認（下の記録） |
-| B-2 | approval_required の形 | ⏳（2026-10-24: ゲートされず未取得、下の記録） | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required --last=1` |
-| B-4 | update（`2026-09-30.preview`）の要求/応答、通ったパス | ⏳ | `npm run evidence -- --kind=approval_update --last=1` |
-| B-5 | webhook 7種（expired は cancel の canceled で代替） | ⏳ | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
+| B-2 | approval_required の形 | ✅ 2026-10-24（差分あり） | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required --last=1` |
+| B-4 | update（`2026-09-30.preview`）の要求/応答、通ったパス | ✅ 2026-10-24（`/{id}` が正、`/update` は 404） | `npm run evidence -- --kind=approval_update --last=1` |
+| B-5 | webhook 7種（expired は cancel の canceled で代替） | 一部 ✅（created / canceled） | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
 | B-6 | クレジットノートのルールで approval_required が返るか | ⏳ | `npm run propose -- --only=INQ-004` |
-| B-7 | デフォルトルールの実際の中身 | ✅ 2026-10-21 | 本人のスクショで確認（下の記録） |
+| B-7 | デフォルトルールの実際の中身 | ✅ 2026-10-21 / 更新 2026-10-24（アカウントにより2件または3件） | 本人のスクショで確認（下の記録） |
 | B-9 | Block 時のエラーの形 | ⏳ | `npm run demo:runaway -- --count=5 --interval=10 --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
 | B-10 | x402 の返金が返金ルールに掛かるか | ⛔ | M11 停止中（§3） |
 | M10 | CLI / MCP 経路の差 | ⏳ | `npm run demo:mcp -- --amount=1500` → `logs/route-compare.jsonl` |
@@ -111,6 +111,54 @@ Stripe CLI 1.55.1 の `stripe listen` が表示したアカウント既定の AP
 この時点で Dashboard 上の Refund created（Actor = Agent key、Submit for approval）は Active（2026-10-21 のスクショ）。
 **有力な原因: `STRIPE_AGENT_KEY` に入っているキーに Agent タグが付いていない**（API では判別できないため Dashboard で確認待ち）。
 他の候補: ルールが編集途中で保存されていない／無効化されている。
+
+### 2026-10-24 — デフォルトルール作成後: ゲートが効いた（B-2 / B-4 / B-5 / B-7 更新）
+
+- **07:54 UTC（Dashboard 表示 Oct 24, 4:54 PM）**、`x402 sandbox` に Stripe 作成のルールが **3件**できた（本人のスクショ）:
+  Subscription canceled / **Payout created** / Refund created（いずれも Active、レビュアー Analyst +2 more）。
+  06:28 の時点ではこのアカウントにルールが無く、そのため返金が素通りしたと考えられる。
+  2026-10-21 のスクショは別の sandbox（「x402」）で、そちらは2件（Payout created なし）。
+  → **B-7 の更新: デフォルトルールはアカウントによって2件のことも3件のこともある**。3件の方は API keys ページの記述
+  （payouts, refunds, …）に近い。何をきっかけに作られたかは未確認。
+- 同じキー（rk_test_…00ay）で返金を起案すると、**ゲートが効いた**。
+
+#### B-2 approval_required の形 ✅（ドキュメントと差分あり）
+
+07:55 UTC、プールから ¥1,500 返金、`Stripe-Version: 2025-02-24.acacia`、Request-Id `req_zGKRleeIZ9GCq3`:
+
+```json
+HTTP 403
+{
+  "error": {
+    "approval_request_id": "apreq_test_61VdNkpeKUd05uNew16V8o4HBpHNq7Aqs1lswdSZsLyK",
+    "code": "approval_required",
+    "doc_url": "https://stripe.com/docs/error-codes/approval-required",
+    "message": "This action requires human approval before it can be completed. An approval request has been created and is awaiting review. If approved, it will automatically execute. To check status: GET /v2/core/approval_requests/apreq_test_…. To provide context for the reviewer: POST /v2/core/approval_requests/apreq_test_… with a reason parameter. These endpoints require API version 2026-08-26.preview or later.",
+    "request_log_url": "https://dashboard.stripe.com/acct_1TzQ…/test/workbench/logs?object=req_zGKRleeIZ9GCq3",
+    "type": "invalid_request_error"
+  }
+}
+```
+
+- HTTP は **403**。id は**フラットな `error.approval_request_id`**。想定していた `error.approval_request.{id,action,status,dashboard_url,expires_at}`
+  の**オブジェクトは無い** → パーサを両方受け付けるよう修正し、action / status / dashboard_url / expires_at は update の応答から埋める。
+- ID 接頭辞は `apreq_test_`。古い API バージョン（acacia）でもゲートは効く。
+
+#### B-4 理由文 update ✅（ドキュメントと差分あり）
+
+- `POST /v2/core/approval_requests/{id}/update`（ガイドのパス）→ **HTTP 404**
+- `POST /v2/core/approval_requests/{id}`（API リファレンスのパス、エラーメッセージの案内とも一致）→ **HTTP 200**
+- `Stripe-Version: 2026-09-30.preview` で通る。応答は approval request オブジェクト（`action: "refund.create"`, `status: "requires_review"`,
+  `dashboard_url: https://dashboard.stripe.com/acct_…/test/settings/approvals/requests/apreq_test_…`）。
+- **`expires_at` は作成の24時間後**（2026-10-25T07:55:23Z）。ガイドの「14日で失効」とは違う（sandbox だけの挙動かは未確認）。
+  → **承認は起案から24時間以内に押す必要がある**。
+
+#### B-5 webhook ✅（一部）
+
+- `canceled`: `npm run approvals:cancel` → `v2.core.approval_request.canceled`（evt_test_65VdNloh…）が `stripe listen` 経由で届き、監査ログに反映。
+- `created`: 4件届いた。ただし**起案と同じ秒に届き、監査ログ書き込みより先に着く**ため、webhook が記録を見つけられず捨てていた
+  → 最大6秒待って再確認するよう修正。
+- approved / rejected / succeeded / failed: 本人の承認・却下の後に確認する。expired は24時間で起きるはずなので、放置した1件で確認できる見込み。
 
 ### 追記の書式
 
