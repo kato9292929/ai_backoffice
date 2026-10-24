@@ -63,7 +63,7 @@
 | # | 項目 | 状態 | 流すコマンド |
 |---|---|---|---|
 | B-0 | Settings > Approvals が出ているか（public preview 化で登録不要になったか） | ✅ 2026-10-21 | 本人のスクショで確認（下の記録） |
-| B-2 | approval_required の形 | ⏳ | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required --last=1` |
+| B-2 | approval_required の形 | ⏳（2026-10-24: ゲートされず未取得、下の記録） | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required --last=1` |
 | B-4 | update（`2026-09-30.preview`）の要求/応答、通ったパス | ⏳ | `npm run evidence -- --kind=approval_update --last=1` |
 | B-5 | webhook 7種（expired は cancel の canceled で代替） | ⏳ | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
 | B-6 | クレジットノートのルールで approval_required が返るか | ⏳ | `npm run propose -- --only=INQ-004` |
@@ -93,6 +93,24 @@
 - **デモに効く点**: デフォルト2件のレビュアーはロール指定（Analyst +2 more）。ドキュメント上メール通知は個人指定のメンバーにしか
   届かないため、デフォルト2件にも本人を個人として追加する必要がある。
 - 作成日時がルール作成の起点（初めての agent キー作成）と思われるが、キー一覧は未確認。
+
+### 2026-10-24 — 最初のライブ実行: 返金がゲートされずに実行された
+
+環境: sandbox `x402 sandbox`（acct_1TzQ…、country JP）。`STRIPE_SECRET_KEY` = sk_test_…、`STRIPE_AGENT_KEY` = rk_test_…00ay。
+Stripe CLI 1.55.1 の `stripe listen` が表示したアカウント既定の API バージョンは `2026-07-29.dahlia`。
+
+| 時刻 (UTC) | 操作 | 結果 |
+|---|---|---|
+| 06:27 | `GET /v2/core/approval_requests`（secret key、`2026-09-30.preview`） | HTTP 200、`{"data":[],"next_page_url":null,"previous_page_url":null}` → **list endpoint とこの preview バージョンはライブで通る** |
+| 06:27 | `npm run seed` | 顧客4・サブスク3・charge 4（プール含む）・open 請求書 1 を作成。正常 |
+| 06:28 | INQ-001 返金 ¥3,300（agent key、`2025-02-24.acacia`） | **HTTP 200 で即時実行**（re_3UTyQQ…、Request-Id `req_fbcO7mGmv44Iyh`）。approval_required は返らない → `rule_not_enforced` |
+| 06:28 | 切り分け: プールから返金 ¥1,500（agent key、`Stripe-Version: 2026-07-29.dahlia`） | **HTTP 200 で即時実行**（re_3UTyQT…、Request-Id `req_75CsqgM2f2SVOf`）→ API バージョンは原因ではない |
+| 06:28 | 切り分け: 両キーの所属アカウント | 同じ acct_1TzQ…（agent key は `/v1/account` の権限が無く、エラー本文に同じアカウント ID が出る） |
+| 06:28 | `GET /v2/core/approval_requests`（agent key） | HTTP 200、`data: []` → agent key は approval request を読める |
+
+この時点で Dashboard 上の Refund created（Actor = Agent key、Submit for approval）は Active（2026-10-21 のスクショ）。
+**有力な原因: `STRIPE_AGENT_KEY` に入っているキーに Agent タグが付いていない**（API では判別できないため Dashboard で確認待ち）。
+他の候補: ルールが編集途中で保存されていない／無効化されている。
 
 ### 追記の書式
 
