@@ -182,6 +182,14 @@ HTTP 403
   5種の発行を確認（approved / rejected / succeeded は配送ではなく events API での確認）。
 - 監査ログに INQ-001 の `rule_not_enforced` が残るのは 06:28 のルール作成前の実行分。
 
+### 2026-10-24 15:37 UTC — INQ-004 クレジットノート（B-6）: 権限不足で拒否
+
+本人が Credit note is created（Actor = Agent key、Submit for approval、レビュアー個人指定）を Activate した後に起案。
+
+- HTTP 403 `more_permissions_required`「…does not have the required permissions… Enabling Credit Notes Write ('credit_note_write')
+  permissions on this key would allow this request to continue.」（Request-Id `req_WqYXhMrg1HiFM0`）
+- → **キーの権限チェックは承認ルールより先**。権限が無ければ approval request は作られない。B-6 は権限追加後に再実行。
+
 ### 追記の書式
 
 ```
