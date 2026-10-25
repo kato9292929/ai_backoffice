@@ -65,7 +65,7 @@
 | B-0 | Settings > Approvals が出ているか（public preview 化で登録不要になったか） | ✅ 2026-10-21 | 本人のスクショで確認（下の記録） |
 | B-2 | approval_required の形 | ✅ 2026-10-24（差分あり） | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required --last=1` |
 | B-4 | update（`2026-09-30.preview`）の要求/応答、通ったパス | ✅ 2026-10-24（`/{id}` が正、`/update` は 404） | `npm run evidence -- --kind=approval_update --last=1` |
-| B-5 | webhook 7種（expired は cancel の canceled で代替） | 5種 ✅（created / approved / rejected / canceled / succeeded）、failed・expired 待ち | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
+| B-5 | webhook 7種（expired は cancel の canceled で代替） | 5種 ✅（created / approved / succeeded / canceled は配送、rejected は events API）、failed・expired 待ち | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
 | B-6 | クレジットノートのルールで approval_required が返るか | ✅ 2026-10-25（`credit_note.create`） | `npm run propose -- --only=INQ-004` |
 | B-7 | デフォルトルールの実際の中身 | ✅ 2026-10-21 / 更新 2026-10-24（アカウントにより2件または3件） | 本人のスクショで確認（下の記録） |
 | B-9 | Block 時のエラーの形 | ⏳ | `npm run demo:runaway -- --count=5 --interval=10 --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
@@ -202,6 +202,16 @@ HTTP 403
   `credit_note.create` が無いのはリファレンス側の記載漏れ。
 - `requested_by.api_key.id` は `mk_…` 形式（キーのトークン `rk_test_…` ではなく、Dashboard 上のキー ID。キー編集 URL の id と一致）。
 - webhook: `created` を記録できた（2026-10-24 の取りこぼし修正が有効）。
+
+### 2026-10-25 11:39 UTC — INQ-004 承認 → 実行（webhook 経由で全段を受信）
+
+- `stripe listen` + webhook サーバー稼働中に本人が承認。`created`（11:37:09）→ `approved`（11:39:28）→ `succeeded`（11:39:29）が
+  **すべて webhook で配送され**、監査ログに反映。succeeded で approval request を agent key で取得し、
+  `status_details.succeeded.result` = `credit_note` cn_1UUP… を記録（起案アクションと一致）。
+- B-5: approved / succeeded も配送で確認できた。7種中 created / approved / rejected（events API）/ canceled / succeeded を確認、
+  failed・expired は未発生。
+- Block 版ルール作成時の画面: 単一メンバーのアカウントでは条件の先頭「Actor equal to Agent key」は**変更不可**。
+  rate limit は「Add condition」で追加する形（本人の画面で確認中）。
 
 ### 追記の書式
 
