@@ -66,7 +66,7 @@
 | B-2 | approval_required の形 | ✅ 2026-10-24（差分あり） | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required --last=1` |
 | B-4 | update（`2026-09-30.preview`）の要求/応答、通ったパス | ✅ 2026-10-24（`/{id}` が正、`/update` は 404） | `npm run evidence -- --kind=approval_update --last=1` |
 | B-5 | webhook 7種（expired は cancel の canceled で代替） | 5種 ✅（created / approved / rejected / canceled / succeeded）、failed・expired 待ち | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
-| B-6 | クレジットノートのルールで approval_required が返るか | ⏳ | `npm run propose -- --only=INQ-004` |
+| B-6 | クレジットノートのルールで approval_required が返るか | ✅ 2026-10-25（`credit_note.create`） | `npm run propose -- --only=INQ-004` |
 | B-7 | デフォルトルールの実際の中身 | ✅ 2026-10-21 / 更新 2026-10-24（アカウントにより2件または3件） | 本人のスクショで確認（下の記録） |
 | B-9 | Block 時のエラーの形 | ⏳ | `npm run demo:runaway -- --count=5 --interval=10 --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
 | B-10 | x402 の返金が返金ルールに掛かるか | ⛔ | M11 停止中（§3） |
@@ -189,6 +189,19 @@ HTTP 403
 - HTTP 403 `more_permissions_required`「…does not have the required permissions… Enabling Credit Notes Write ('credit_note_write')
   permissions on this key would allow this request to continue.」（Request-Id `req_WqYXhMrg1HiFM0`）
 - → **キーの権限チェックは承認ルールより先**。権限が無ければ approval request は作られない。B-6 は権限追加後に再実行。
+
+### 2026-10-25 11:37 UTC — INQ-004 クレジットノート（B-6）✅
+
+本人がキーに Credit Notes Write を追加した後に再実行。
+
+- `POST /v1/credit_notes`（open 請求書 ¥30,000 に対し ¥15,000、custom line item）→ **HTTP 403 `approval_required`**（Request-Id `req_9XqRkJ2DyAz5F9`）。
+  返金と同じ形（フラットな `error.approval_request_id`）。
+- approval request: **`action: "credit_note.create"`**、`status: requires_review`、`rule.name: "Credit note is created"`、
+  `requested_by: {type: "api_key", api_key: {id: "mk_…", name: "x402"}}`、`expires_at` は作成の24時間後。
+- → **ガイドの Supported actions どおり、クレジットノートは承認対象**。API リファレンスの `action` enum に
+  `credit_note.create` が無いのはリファレンス側の記載漏れ。
+- `requested_by.api_key.id` は `mk_…` 形式（キーのトークン `rk_test_…` ではなく、Dashboard 上のキー ID。キー編集 URL の id と一致）。
+- webhook: `created` を記録できた（2026-10-24 の取りこぼし修正が有効）。
 
 ### 追記の書式
 

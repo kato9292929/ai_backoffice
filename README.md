@@ -273,7 +273,6 @@ HTTP ステータス/エラー本文をそのまま記録する。結果は
 | # | 未検証項目 | 依存するコード | 確認方法 |
 |---|---|---|---|
 | B-5 | `v2.core.approval_request.*` webhook（7種）の受信と thin event の形状 | `src/webhook.ts` | 承認・却下・`npm run approvals:cancel` で canceled。expired は14日待てないので canceled で代替 |
-| B-6 | クレジットノート発行に付けたルールで `approval_required` が返るか | `src/agent/execute.ts`（credit note） | `npm run propose -- --only=INQ-004` |
 | B-8 | Stripe agent skills（`stripe-docs` 等）の導入 | — | 導入可能環境で https://docs.stripe.com/skills |
 | B-9 | Block で拒否されたときのエラーの形 | `src/stripe-client.ts` `detectBlock` | `npm run demo:runaway -- --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
 | B-10 | ステーブルコインの PaymentIntent への返金が Approvals の返金ルールに同じように掛かるか | M11（未実装） | M11 再開後 |
@@ -286,6 +285,7 @@ HTTP ステータス/エラー本文をそのまま記録する。結果は
 | ~~旧 B-6~~ | 承認→自動実行時に pending invoice item が請求書へ取り込まれるか → **対象外**（請求書の作成は承認対象の操作ではない） | Approvals ページ「Supported actions」 |
 | ~~B-2~~ | approval_required の形 → HTTP 403、`error.approval_request_id`（フラット）。ネストしたオブジェクトは無い | ライブ（`docs/live-verification.md`） |
 | ~~B-4~~ | 理由文 update → `POST /v2/core/approval_requests/{id}` が 200、`/update` は 404。`2026-09-30.preview` で通る | 同上 |
+| ~~B-6~~ | クレジットノートのルール → approval_required が返る（action `credit_note.create`）。キーに Credit Notes Write が必要 | ライブ（`docs/live-verification.md`） |
 | ~~B-0~~ | Settings > Approvals が出るか → **出る**（2026-10-21、sandbox） | 本人のスクショ（`docs/live-verification.md`） |
 | ~~B-7~~ | デフォルトルールの中身 → **返金の作成・サブスクの解約の2件のみ**（Actor = Agent key、Submit for approval、レビュアーはロール指定） | 同上。ライブ確認 |
 | ~~旧 B-7~~ | 請求書作成が agent-key デフォルトルールの対象か → **対象外**（同上） | 同上 |
