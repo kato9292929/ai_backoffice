@@ -82,6 +82,10 @@ async function section2and3(): Promise<void> {
     const known = new Set(STATUS_GROUPS.flatMap((g) => g.statuses));
     for (const [st, n] of byStatus) if (!known.has(st)) console.log(`(未知の status ${st}) ${n}`);
     console.log(`合計 ${data.length} 件（GET /v2/core/approval_requests, agent key, ${config.previewVersion}。一覧は起案したキー単位）`);
+    // Live (2026-10-25): a Block leaves a `rejected` request with review=null;
+    // a human rejection has review.result="rejected".
+    const blocked = data.filter((r) => r.status === 'rejected' && !r.review).length;
+    if (blocked) console.log(`  うち Block による rejected（review なし）: ${blocked} 件`);
     const fromApiKey = data.filter((r) => r.requested_by?.type === 'api_key').length;
     if (fromApiKey) console.log(`うち API key からの起案: ${fromApiKey} 件`);
 

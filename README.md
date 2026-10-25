@@ -285,7 +285,7 @@ HTTP ステータス/エラー本文をそのまま記録する。結果は
 | ~~B-2~~ | approval_required の形 → HTTP 403、`error.approval_request_id`（フラット）。ネストしたオブジェクトは無い | ライブ（`docs/live-verification.md`） |
 | ~~B-4~~ | 理由文 update → `POST /v2/core/approval_requests/{id}` が 200、`/update` は 404。`2026-09-30.preview` で通る | 同上 |
 | ~~B-6~~ | クレジットノートのルール → approval_required が返る（action `credit_note.create`）。キーに Credit Notes Write が必要 | ライブ（`docs/live-verification.md`） |
-| ~~B-9~~ | Block 時のエラー → HTTP 403、`error.code = action_blocked`、approval request は作られない。rate limit 条件の画面名は「Number of requests exceeds」 | ライブ（`docs/live-verification.md`） |
+| ~~B-9~~ | Block 時のエラー → HTTP 403、`error.code = action_blocked`（id は返らない）。approval request は `rejected`・`review: null` で残るが、webhook イベントは出ない。rate limit 条件の画面名は「Number of requests exceeds」 | ライブ（`docs/live-verification.md`） |
 | ~~B-0~~ | Settings > Approvals が出るか → **出る**（2026-10-21、sandbox） | 本人のスクショ（`docs/live-verification.md`） |
 | ~~B-7~~ | デフォルトルールの中身 → **返金の作成・サブスクの解約の2件のみ**（Actor = Agent key、Submit for approval、レビュアーはロール指定） | 同上。ライブ確認 |
 | ~~旧 B-7~~ | 請求書作成が agent-key デフォルトルールの対象か → **対象外**（同上） | 同上 |

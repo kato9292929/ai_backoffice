@@ -248,8 +248,14 @@ HTTP 403
 }
 ```
 
-- **B-9 確定**: HTTP 403、`error.code = "action_blocked"`、`type = invalid_request_error`。approval_request_id は付かず、
-  approval request も**作られない**（agent key の一覧に増加なし）。実装の判定（code に "block" を含む）はそのまま当たった。
+- **B-9 確定**: HTTP 403、`error.code = "action_blocked"`、`type = invalid_request_error`。エラーに approval_request_id は**付かない**。
+  実装の判定（code に "block" を含む）はそのまま当たった。
+- **ただし approval request は作られる**（当初「作られない」と書いたのは誤り、同日訂正）: Block された #4・#5 と同時刻に、
+  agent key の一覧へ `status: "rejected"`、`review: null`、`status_transitions: null`、`reason: null`、`rule.name: "Refund is created"`
+  の approval request が2件増えた（apreq_test_61Vdo0MA…、apreq_test_61Vdo0W7…）。
+- これらについて `v2.core.approval_request.*` イベントは**発行されない**（`GET /v2/core/events` に無し。同時刻の v1 イベントは
+  #1〜#3 の refund 関連だけ）。→ Block は webhook では検知できず、API 応答（403 `action_blocked`）か一覧でしか分からない。
+- 一覧上は人間の却下と同じ `rejected` になる。区別するには `review` が null か（人間の却下は `review.result = "rejected"`）を見る。
 - 「3件を超えたら」の数え方は想定どおり（3件目までは通り、4件目から拒否）。
 
 ### 追記の書式
