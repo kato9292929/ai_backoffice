@@ -68,7 +68,7 @@
 | B-5 | webhook 7種（expired は cancel の canceled で代替） | 5種 ✅（created / approved / succeeded / canceled は配送、rejected は events API）、failed・expired 待ち | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
 | B-6 | クレジットノートのルールで approval_required が返るか | ✅ 2026-10-25（`credit_note.create`） | `npm run propose -- --only=INQ-004` |
 | B-7 | デフォルトルールの実際の中身 | ✅ 2026-10-21 / 更新 2026-10-24（アカウントにより2件または3件） | 本人のスクショで確認（下の記録） |
-| B-9 | Block 時のエラーの形 | ⏳ | `npm run demo:runaway -- --count=5 --interval=10 --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
+| B-9 | Block 時のエラーの形 | ✅ 2026-10-25（403 `action_blocked`） | `npm run demo:runaway -- --count=5 --interval=10 --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
 | B-10 | x402 の返金が返金ルールに掛かるか | ⛔ | M11 停止中（§3） |
 | M10 | CLI / MCP 経路の差 | ⏳ | `npm run demo:mcp -- --amount=1500` → `logs/route-compare.jsonl` |
 
@@ -212,6 +212,45 @@ HTTP 403
   failed・expired は未発生。
 - Block 版ルール作成時の画面: 単一メンバーのアカウントでは条件の先頭「Actor equal to Agent key」は**変更不可**。
   rate limit は「Add condition」で追加する形（本人の画面で確認中）。
+
+### 2026-10-25 11:56 UTC — M9 暴走シナリオ Block 版（B-9）✅
+
+ルール構成（本人の Dashboard 操作）: デフォルトの Refund created を **Inactive**、新規「Refund is created」を **Active**
+（条件 `Actor equal to Agent key` **And** `Number of requests exceeds`（3件 / 10分のつもりで設定）、制御 **Block**、レビュアーなし）。
+
+- 画面の表記: rate limit 条件は「**Number of requests exceeds**」。Add condition で選べるのは **Amount** と **Number of requests exceeds** の2つだけ。
+  単一メンバーのアカウントでは先頭の Actor 条件は変更できず、追加条件は And でつながる。
+- 同じトリガーのルールを2つ同時に Activate しようとすると「A rule for the same trigger is already active. Deactivate it before activating
+  this one.」で拒否される（ドキュメントの「Only one active rule can apply to a given action」の実際の挙動）。
+
+`npm run demo:runaway -- --count=5 --interval=10 --amount=1500 --rule-set=block`（run `runaway-20261025115637`）:
+
+| # | 経過 | HTTP | 結果 |
+|---|---|---|---|
+| 1 | +1s | 200 | 即時実行 re_3UTyQT…mshY2MD |
+| 2 | +12s | 200 | 即時実行 re_3UTyQT…8Rv4RSK |
+| 3 | +23s | 200 | 即時実行 re_3UTyQT…NdIWWJv |
+| 4 | +33s | 403 | **Block** |
+| 5 | +44s | 403 | **Block**（Request-Id `req_8TvZoEgvPm6P1x`） |
+
+Block の生レスポンス（#5）:
+
+```json
+HTTP 403
+{
+  "error": {
+    "code": "action_blocked",
+    "doc_url": "https://stripe.com/docs/error-codes/action-blocked",
+    "message": "This action is blocked by an approval rule on your account. To allow this action, modify or remove the rule in the Dashboard under **Settings** > **Approval Rules**.",
+    "request_log_url": "https://dashboard.stripe.com/acct_1TzQ…/test/workbench/logs?object=req_8TvZoEgvPm6P1x",
+    "type": "invalid_request_error"
+  }
+}
+```
+
+- **B-9 確定**: HTTP 403、`error.code = "action_blocked"`、`type = invalid_request_error`。approval_request_id は付かず、
+  approval request も**作られない**（agent key の一覧に増加なし）。実装の判定（code に "block" を含む）はそのまま当たった。
+- 「3件を超えたら」の数え方は想定どおり（3件目までは通り、4件目から拒否）。
 
 ### 追記の書式
 

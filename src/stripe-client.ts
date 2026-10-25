@@ -156,8 +156,9 @@ export function parseApprovalRequiredBody(body: any): ApprovalRequestRef | null 
 }
 
 /**
- * Heuristic for a Block-rule rejection (B-9). The docs say only that a Block
- * control "rejects the action outright"; the error shape is undocumented. We
+ * Detect a Block-rule rejection (B-9). Live (2026-10-25): HTTP 403 with
+ * `error.code = "action_blocked"` and no approval request. Kept heuristic in
+ * case the wording drifts. We
  * classify as `blocked` when the error carries no approval_request but its
  * code/type/message mentions "block" or "approval rule". Stripe's own API rate
  * limiter (HTTP 429, code `rate_limit`) is explicitly NOT a Block.
