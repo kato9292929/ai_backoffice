@@ -71,13 +71,20 @@ export function customerId(m: SeedManifest, handle: string): CustomerSeed {
  * many small partial refunds are drawn from it, so fixtures stay untouched. */
 export const POOL_CHARGE_HANDLE = 'runaway-pool';
 
+/** One charge per M10 route: only one approval request may be pending per
+ * PaymentIntent, so the two routes must not share a target. */
+export const ROUTE_CHARGE_HANDLES = { cli: 'route-cli', mcp: 'route-mcp' } as const;
+
 /** First refundable fixture charge for a customer handle (pool excluded). */
 export function chargeForCustomer(
   m: SeedManifest,
   customerHandle: string,
 ): ChargeSeed {
   const ch = m.charges.find(
-    (x) => x.customerHandle === customerHandle && x.handle !== POOL_CHARGE_HANDLE,
+    (x) =>
+      x.customerHandle === customerHandle &&
+      x.handle !== POOL_CHARGE_HANDLE &&
+      !Object.values(ROUTE_CHARGE_HANDLES).includes(x.handle as 'route-cli'),
   );
   if (!ch)
     throw new Error(`no seeded charge for customer handle "${customerHandle}"`);

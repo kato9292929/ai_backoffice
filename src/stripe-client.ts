@@ -195,6 +195,11 @@ export function classifyBody(body: any, status: number, ok: boolean): Classified
   if (ok) return { outcome: 'executed' };
   const blockEvidence = detectBlock(body, status);
   if (blockEvidence) return { outcome: 'blocked', blockEvidence };
+  // Live (2026-10-27): while a request is pending for the same PaymentIntent,
+  // another gated attempt gets HTTP 400 with no code and this message.
+  if (/already an approval request waiting/i.test(String(body?.error?.message ?? ''))) {
+    return { outcome: 'duplicate_pending' };
+  }
   return { outcome: 'error' };
 }
 

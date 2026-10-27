@@ -111,6 +111,8 @@ rate limit + **Block** ルールで止まることも見せる。
 - **approval_required の実際の形**（2026-10-24、B-2）: HTTP 403、`error.code = approval_required`、id は
   フラットな `error.approval_request_id`（dashboard_url などは付かない。update の応答から取る）。
 - **承認期限**: ライブの `expires_at` は作成の **24時間後**だった（ガイドは14日）。承認は24時間以内に押す。
+- **承認待ちは対象 PaymentIntent ごとに1件まで**（2026-10-27）: 承認待ちがある支払いへの再起案は HTTP 400
+  「There is already an approval request waiting …」（code なし）。`duplicate_pending` として記録する。
 - **ルールの条件は amount / actor / rate limit の3種**、`and` / `or` で組み合わせ可。
   **制御は Require approval か Block の2種で、1ルールに1つ**。**同じ操作に有効なルールは
   1つだけ**。ルール作成は Dashboard から（ルールの API はドキュメントに無い）。
@@ -137,8 +139,8 @@ rate limit + **Block** ルールで止まることも見せる。
 | | 直接 API（CLI 経路） | Stripe MCP + agent キー | Stripe MCP + OAuth（**デモ対象外**） |
 |---|---|---|---|
 | 認証 | agent タグ付き restricted key | agent タグ付き key を `Authorization: Bearer` | ユーザーの OAuth セッション |
-| 人間の確認 | Approvals（approval_required → Dashboard で承認） | Approvals が掛かるはず（ライブ確認対象） | 返金・outbound payment などで**確認URL**が返る。承認すると approval token が出て、エージェントが**再実行**する。24時間で失効 |
-| 返金ツール | `POST /v1/refunds` | `stripe_api_write` → Create refund | 同左 |
+| 人間の確認 | Approvals（approval_required → Dashboard で承認） | **同じ Approvals**（2026-10-27 確認）。tool result は Markdown で approval request ID と Requests ページの URL を返し、理由文は MCP の `PostV2CoreApprovalRequestsId` で付ける | 返金・outbound payment などで**確認URL**が返る。承認すると approval token が出て、エージェントが**再実行**する。24時間で失効 |
+| 返金ツール | `POST /v1/refunds` | `stripe_api_write`（`stripe_api_operation_id: PostRefunds`） | 同左 |
 | 本デモでの確認 | `npm run demo:mcp` で両経路を同じ返金で比較し、approval_required / approval request の作成 / 確認URL の有無を記録 | 同左 | ドキュメントの記述のみ |
 
 > **注意（12月以降）**: Stripe MCP は **2026-11-30 までに移行が必要**。12月以降、

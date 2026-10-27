@@ -148,6 +148,7 @@ async function main(): Promise<void> {
       executed: '即時実行',
       approval_required: 'approval_required',
       blocked: 'Block',
+      duplicate_pending: '重複（同じ対象に承認待ちあり）',
       error: 'エラー(未分類)',
     };
     log.info(`#${seq} +${t}s HTTP ${response.status} → ${tag[c.outcome]} ${detail}`);

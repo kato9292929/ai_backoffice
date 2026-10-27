@@ -79,7 +79,10 @@ const CHARGES = [
   { handle: 'tanaka-dup', customerHandle: 'tanaka', amount: 3300, minRemaining: 3300, note: '二重課金の重複分（INQ-001の返金対象）' },
   { handle: 'yamada-annual', customerHandle: 'yamada', amount: 80000, minRemaining: 80000, note: '年間前払い（INQ-002の高額返金対象）' },
   { handle: 'suzuki-month', customerHandle: 'suzuki', amount: 5000, minRemaining: 5000, note: '月額分（INQ-003の疑わしい返金対象）' },
-  { handle: POOL_CHARGE_HANDLE, customerHandle: 'suzuki', amount: 20000, minRemaining: 7500, note: '少額返金の連発用プール（M9 暴走シナリオ / M10 経路比較）' },
+  { handle: POOL_CHARGE_HANDLE, customerHandle: 'suzuki', amount: 20000, minRemaining: 7500, note: '少額返金の連発用プール（M9 暴走シナリオ）' },
+  // M10: one charge per route (only one pending approval request per PaymentIntent).
+  { handle: 'route-cli', customerHandle: 'yamada', amount: 5000, minRemaining: 5000, note: 'M10 経路比較（CLI 経路の返金対象）' },
+  { handle: 'route-mcp', customerHandle: 'yamada', amount: 5000, minRemaining: 5000, note: 'M10 経路比較（MCP 経路の返金対象）' },
 ] as const;
 
 // Finalized (open) invoices a credit note is issued against (M8, INQ-004).

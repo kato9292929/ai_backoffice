@@ -70,7 +70,7 @@
 | B-7 | デフォルトルールの実際の中身 | ✅ 2026-10-21 / 更新 2026-10-24（アカウントにより2件または3件） | 本人のスクショで確認（下の記録） |
 | B-9 | Block 時のエラーの形 | ✅ 2026-10-25（403 `action_blocked`） | `npm run demo:runaway -- --count=5 --interval=10 --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
 | B-10 | x402 の返金が返金ルールに掛かるか | ⛔ | M11 停止中（§3） |
-| M10 | CLI / MCP 経路の差 | ⏳ | `npm run demo:mcp -- --amount=1500` → `logs/route-compare.jsonl` |
+| M10 | CLI / MCP 経路の差 | ✅ 2026-10-27（どちらも Approvals に乗る。MCP は Markdown 応答） | `npm run demo:mcp -- --amount=1500` → `logs/route-compare.jsonl` |
 
 ### B-0 / B-7（2026-10-21、本人の Dashboard スクショ）
 
@@ -257,6 +257,45 @@ HTTP 403
   #1〜#3 の refund 関連だけ）。→ Block は webhook では検知できず、API 応答（403 `action_blocked`）か一覧でしか分からない。
 - 一覧上は人間の却下と同じ `rejected` になる。区別するには `review` が null か（人間の却下は `review.result = "rejected"`）を見る。
 - 「3件を超えたら」の数え方は想定どおり（3件目までは通り、4件目から拒否）。
+
+### 2026-10-27 14:10 UTC — M9 承認版: 同じ対象への承認待ちは1件まで
+
+ルール: Block 版を Inactive、デフォルト Refund created を Active に戻した後。
+
+`npm run demo:runaway -- --count=5 --interval=10 --amount=1500 --rule-set=approval`（同じプール PaymentIntent への部分返金を5回）:
+
+| # | HTTP | 結果 |
+|---|---|---|
+| 1 | 403 | approval_required（apreq_test_61VeZ1zY…） |
+| 2〜5 | **400** | `{"error":{"message":"There is already an approval request waiting to be reviewed by an administrator for this action.","type":"invalid_request_error"}}`（**code なし**、Request-Id 例 `req_jYH4kOUXVzmQBa`） |
+
+- 範囲の切り分け:
+  - 同じ PaymentIntent・別の金額（¥1,600）→ 同じ 400
+  - **同じ顧客の別 PaymentIntent**（INQ-003、suzuki-month）→ approval_required（新しい承認待ち）
+  - 2026-10-24 には別顧客の返金3件が同時に承認待ちになれた
+  - → **承認待ちの重複チェックは対象 PaymentIntent 単位**（顧客単位・アクション単位ではない）
+- 暴走の観点: 同じ支払いへの連打は、承認待ち1件に**自然に集約**される（Block ルールが無くても2件目以降は 400）。
+  別々の支払いへの連打は止まらないので、rate limit + Block はそちらに効く。
+- 実装: この 400 を `duplicate_pending` として分類するようにした。M10 は経路ごとに別の charge（route-cli / route-mcp）を使うよう変更。
+- INQ-003 の承認待ち（apreq_test_61VeZ35l…、expires_at 2026-10-28T14:11:08Z）は **expired 確認用にあえて放置**。
+
+### 2026-10-27 14:12 UTC — M10 経路比較 ✅
+
+| | 直接 API（CLI） | Stripe MCP（agent key を Bearer） |
+|---|---|---|
+| 接続 | — | `initialize` 成功（serverInfo `stripe-mcp 1.0.0`）、tools 9個 |
+| 返金の呼び方 | `POST /v1/refunds` | `stripe_api_write`（`stripe_api_operation_id: "PostRefunds"`, `parameters: {payment_intent, amount, metadata}`） |
+| 応答 | HTTP 403 JSON `error.code=approval_required`、`error.approval_request_id` | tool result `isError: true`、**Markdown テキスト**:「This action requires human approval … **Approval Request**: apreq_… **Approval URL**: (Dashboard の Approvals Requests ページ)」。次の手順として理由文を `PostV2CoreApprovalRequestsId` で付けるよう指示（reason は最大1000文字、「ユーザーに書かせず自分で書け」） |
+| approval_required | yes | yes |
+| approval request の作成 | あり（apreq_test_61VeZ46k…、rule `Refund created`） | あり（apreq_test_61VeZ5PM…、rule `Refund created`、`requested_by` は同じ mk_… / "x402"） |
+| 理由文の付与 | `POST /v2/core/approval_requests/{id}`（直接） | MCP `stripe_api_write` `PostV2CoreApprovalRequestsId` → 応答 `structuredContent` に approval request オブジェクト（JSON） |
+| 確認URL（OAuth 経路の approval token 方式） | なし | **なし**。返る URL は Approvals の Requests ページ（承認は Dashboard、approval token は出ない） |
+
+- `stripe_api_write` の入力スキーマ（2026-10-27）: `stripe_api_operation_id`（必須）/ `parameters` / `human_confirmation.approval_token`。
+  `human_confirmation` の説明は OAuth 経路の「確認URL → 人間が承認 → approval_token を付けて再実行」の手順で、ドキュメントの記述と一致。
+  agent key ではこの経路にならず、Approvals 側に乗る。
+- 最初の実行では実装がスキーマ（operation id 形式）と Markdown 応答に未対応で失敗 → 対応後に再実行。途中で作られた理由なしの
+  承認待ち（apreq_test_61VeZ4ZA…）は cancel 済み。
 
 ### 追記の書式
 

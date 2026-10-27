@@ -135,6 +135,12 @@ export function buildApiWriteArgs(
     );
   }
   const props = Object.keys(tool?.inputSchema?.properties ?? {});
+  // Live schema (2026-10-27): { stripe_api_operation_id, parameters,
+  // human_confirmation }. Operation ids follow Stripe's OpenAPI naming:
+  // POST /v1/refunds → PostRefunds, POST /v1/credit_notes → PostCreditNotes.
+  if (props.includes('stripe_api_operation_id') && props.includes('parameters')) {
+    return { stripe_api_operation_id: operationId(call.method, call.path), parameters: call.params };
+  }
   const pick = (cands: string[]) => cands.find((c) => props.includes(c));
   const methodKey = pick(['method', 'http_method', 'httpMethod']);
   const pathKey = pick(['path', 'endpoint', 'url', 'resource']);
@@ -180,6 +186,17 @@ export function inspectToolResult(result: McpToolResult): {
     }
   }
   const urls = [...new Set(text.match(/https?:\/\/[^\s"'<>)]+/g) ?? [])];
-  const approvalIds = [...new Set(text.match(/\b(?:apreq|areq)_[A-Za-z0-9]+/g) ?? [])];
+  const approvalIds = [...new Set(text.match(/\b(?:apreq|areq)_(?:test_)?[A-Za-z0-9]+/g) ?? [])];
   return { text, json, urls, approvalIds };
+}
+
+/** Stripe OpenAPI operation id for a literal v1 path (no path params). */
+export function operationId(method: string, path: string): string {
+  const pascal = path
+    .replace(/^\/v1\//, '')
+    .split(/[/_]/)
+    .filter(Boolean)
+    .map((w) => w[0]!.toUpperCase() + w.slice(1))
+    .join('');
+  return method[0]!.toUpperCase() + method.slice(1).toLowerCase() + pascal;
 }

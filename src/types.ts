@@ -78,7 +78,8 @@ export type FinalResult =
 export type RequestOutcome =
   | 'executed' // 2xx: ran immediately
   | 'approval_required' // intercepted by a Require-approval rule
-  | 'blocked' // rejected by a Block rule (B-9: shape inferred, see stripe-client)
+  | 'blocked' // rejected by a Block rule (live: 403 action_blocked)
+  | 'duplicate_pending' // refused: an approval request is already pending for this target (live: 400, no code)
   | 'error'; // anything else — raw body kept for diagnosis
 
 /** Which client path made the request (M10). */

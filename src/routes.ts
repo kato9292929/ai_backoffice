@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { log } from './logger.js';
 import { appendAudit } from './audit-store.js';
-import { POOL_CHARGE_HANDLE, chargeByHandle, customerId, loadSeedManifest } from './manifest.js';
+import { ROUTE_CHARGE_HANDLES, chargeByHandle, customerId, loadSeedManifest } from './manifest.js';
 import { appendRequestLog, newRunId } from './request-log.js';
 import {
   agentRequest,
@@ -11,9 +11,10 @@ import {
   type Classified,
 } from './stripe-client.js';
 import { McpHttpError, StripeMcp, buildApiWriteArgs, inspectToolResult } from './mcp-client.js';
+import { appendRequestLog as logLine } from './request-log.js';
 import { buildJustification } from './agent/justification.js';
 import { attachJustification } from './agent/propose.js';
-import type { ActionPlan, Inquiry, Route } from './types.js';
+import type { ActionPlan, ApprovalRequestRef, Inquiry, Route } from './types.js';
 
 /**
  * M10 — the same refund proposed through two client paths, side by side:
@@ -27,8 +28,10 @@ import type { ActionPlan, Inquiry, Route } from './types.js';
  * set), and did the MCP side return a confirmation URL (the OAuth path's human
  * confirmation; not expected with an agent key — OAuth itself is out of scope).
  *
- * Both refunds are small partial refunds from the pool charge, so neither
- * consumes an INQ fixture even if a path executes immediately.
+ * Each route refunds its OWN seeded charge (route-cli / route-mcp): Stripe
+ * refuses a second approval request while one is pending for the same
+ * PaymentIntent (live 2026-10-27), so sharing one charge would make the second
+ * route fail as a duplicate rather than show its own behaviour.
  *
  *   npm run demo:mcp -- --amount=1500 [--route=both|cli|mcp]
  */
@@ -49,6 +52,8 @@ interface RouteResult {
   approvalRequestId?: string;
   newApprovalRequests?: string[] | 'unknown';
   confirmationUrls: string[];
+  /** Open MCP session, kept so the reason can be attached through MCP too. */
+  mcp?: StripeMcp;
   note?: string;
   raw?: unknown;
 }
@@ -67,20 +72,20 @@ async function main(): Promise<void> {
   const which = value('route', 'both');
   const routes: Route[] = which === 'both' ? ['cli', 'mcp'] : [which as Route];
   const manifest = loadSeedManifest();
-  const pool = chargeByHandle(manifest, POOL_CHARGE_HANDLE);
-  const customer = customerId(manifest, pool.customerHandle);
   const runId = newRunId('routes');
-  const params = {
-    payment_intent: pool.paymentIntentId,
-    amount,
-    metadata: { demo_action: 'route_compare', demo_run: runId },
-  };
 
   log.section(`M10 経路比較 — 返金 ¥${amount} (run ${runId})`);
   const results: RouteResult[] = [];
 
   for (const route of routes) {
     log.section(`route: ${route}`);
+    const pool = chargeByHandle(manifest, ROUTE_CHARGE_HANDLES[route]);
+    const customer = customerId(manifest, pool.customerHandle);
+    const params = {
+      payment_intent: pool.paymentIntentId,
+      amount,
+      metadata: { demo_action: 'route_compare', demo_run: runId },
+    };
     const before = await approvalIdsSnapshot();
     let r: RouteResult;
     try {
@@ -139,12 +144,15 @@ async function main(): Promise<void> {
         expectedGated: true,
       };
       const justification = buildJustification(inquiry, p);
-      const attached = await attachJustification(r.classified.approval, justification, {
-        runId,
-        route,
-        scenario,
-        action: p.action,
-      });
+      const attached =
+        route === 'mcp' && r.mcp
+          ? await attachViaMcp(r.mcp, r.classified.approval, justification, { runId, scenario })
+          : await attachJustification(r.classified.approval, justification, {
+              runId,
+              route,
+              scenario,
+              action: p.action,
+            });
       appendAudit({
         timestamp: new Date().toISOString(),
         fixtureId: scenario,
@@ -226,13 +234,24 @@ async function viaMcp(params: Record<string, unknown>): Promise<RouteResult> {
   // The tool reports Stripe errors inside its result, not as an HTTP status.
   const body = seen.json ?? {};
   const isErrBody = !!body?.error || !!result.isError;
-  const c = classifyBody(body, isErrBody ? 400 : 200, !isErrBody);
+  let c = classifyBody(body, isErrBody ? 400 : 200, !isErrBody);
+  // Live (2026-10-27): with an agent key the tool answers in Markdown, not
+  // JSON — "This action requires human approval … **Approval Request**: apreq_…
+  // **Approval URL**: <Dashboard Approvals request page>".
+  const approvalsPage = seen.urls.find((u) => /\/settings\/approvals\/requests\//.test(u));
+  if (c.outcome !== 'approval_required' && /requires human approval/i.test(seen.text) && seen.approvalIds[0]) {
+    c = {
+      outcome: 'approval_required',
+      approval: { id: seen.approvalIds[0], action: 'refund.create', status: 'requires_review', dashboardUrl: approvalsPage },
+    };
+  } else if (c.outcome === 'error' && /action is blocked/i.test(seen.text)) {
+    c = { outcome: 'blocked', blockEvidence: 'mcp text: action is blocked' };
+  }
   const approvalRequestId = c.approval?.id ?? seen.approvalIds[0];
   // Only links that could be the OAuth path's human-confirmation step: drop
-  // docs links and the approval request's own dashboard_url (that is the
-  // Approvals review page, which both routes share).
+  // docs links and the Approvals review page (shared by both routes).
   const confirmationUrls = seen.urls.filter(
-    (u) => !/docs\.stripe\.com/.test(u) && u !== c.approval?.dashboardUrl,
+    (u) => !/docs\.stripe\.com/.test(u) && u !== approvalsPage && u !== c.approval?.dashboardUrl,
   );
   log.info(
     `mcp: isError=${!!result.isError} → ${c.outcome}` +
@@ -246,7 +265,48 @@ async function viaMcp(params: Record<string, unknown>): Promise<RouteResult> {
     classified: c,
     approvalRequestId,
     confirmationUrls,
+    mcp,
     raw: { args, result },
+  };
+}
+
+/** Attach the reason through MCP itself, as the tool result instructs
+ * (stripe_api_write PostV2CoreApprovalRequestsId, reason ≤ 1000 chars). */
+async function attachViaMcp(
+  mcp: StripeMcp,
+  approval: ApprovalRequestRef,
+  reason: string,
+  ctx: { runId: string; scenario: string },
+): Promise<{ ok: boolean; approval: ApprovalRequestRef }> {
+  const result = await mcp.callTool('stripe_api_write', {
+    stripe_api_operation_id: 'PostV2CoreApprovalRequestsId',
+    parameters: { id: approval.id, reason: reason.slice(0, 1000) },
+  });
+  const seen = inspectToolResult(result);
+  const ok = !result.isError;
+  logLine({
+    timestamp: new Date().toISOString(),
+    runId: ctx.runId,
+    route: 'mcp',
+    kind: 'approval_update',
+    scenario: ctx.scenario,
+    action: 'create_refund',
+    outcome: ok ? 'executed' : 'error',
+    approvalRequestId: approval.id,
+    raw: result,
+    note: 'via MCP stripe_api_write PostV2CoreApprovalRequestsId',
+  });
+  const b = seen.json ?? {};
+  if (ok) log.ok(`  attached justification via MCP (PostV2CoreApprovalRequestsId)`);
+  else log.error('  MCP attach failed', seen.text.slice(0, 300));
+  return {
+    ok,
+    approval: {
+      ...approval,
+      status: b.status ?? approval.status,
+      dashboardUrl: b.dashboard_url ?? approval.dashboardUrl,
+      expiresAt: b.expires_at ?? approval.expiresAt,
+    },
   };
 }
 
