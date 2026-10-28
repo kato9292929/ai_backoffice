@@ -110,7 +110,7 @@ rate limit + **Block** ルールで止まることも見せる。
   ルートが無い 404 のときだけガイドのパスを試す（`STRIPE_APPROVAL_UPDATE_PATH=auto|update|id`）。
 - **approval_required の実際の形**（2026-10-24、B-2）: HTTP 403、`error.code = approval_required`、id は
   フラットな `error.approval_request_id`（dashboard_url などは付かない。update の応答から取る）。
-- **承認期限**: ライブの `expires_at` は作成の **24時間後**だった（ガイドは14日）。承認は24時間以内に押す。
+- **承認期限**: ライブの `expires_at` は作成の **24時間後**だった（ガイドは14日）。ただし `expires_at` を6時間以上過ぎても承認待ちのまま失効せず、`expired` イベントも出なかった（2026-10-28）。実際の失効は14日後かを確認中。
 - **承認待ちは対象 PaymentIntent ごとに1件まで**（2026-10-27）: 承認待ちがある支払いへの再起案は HTTP 400
   「There is already an approval request waiting …」（code なし）。`duplicate_pending` として記録する。
 - **ルールの条件は amount / actor / rate limit の3種**、`and` / `or` で組み合わせ可。
