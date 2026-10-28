@@ -297,6 +297,20 @@ HTTP 403
 - 最初の実行では実装がスキーマ（operation id 形式）と Markdown 応答に未対応で失敗 → 対応後に再実行。途中で作られた理由なしの
   承認待ち（apreq_test_61VeZ4ZA…）は cancel 済み。
 
+### 2026-10-27〜28 — RUNAWAY#1 / ROUTE-CLI / ROUTE-MCP の結果
+
+計画では3件とも却下の予定だったが、Dashboard 上の操作の結果は **3件とも承認** → Stripe が自動実行し succeeded
+（`npm run reconcile` で反映。webhook パイプラインは操作時に停止していた）。
+
+| fixture | 経路 | 結果 | 実行結果 |
+|---|---|---|---|
+| RUNAWAY#1 | cli | approved → succeeded | refund re_3UTyQT…rDpZ0CQ（プールから ¥1,500） |
+| ROUTE-CLI | cli | approved → succeeded | refund re_3UVB6f…BnExMTj（route-cli から ¥1,500） |
+| ROUTE-MCP | mcp | approved → succeeded | refund re_3UVB6f…YYDymwQ（route-mcp から ¥1,500） |
+
+- MCP 経路で起案し MCP で理由文を付けた承認リクエストも、承認後は直接 API 経路と同じく Stripe が実行する（経路による差なし）。
+- sandbox のテストデータの消費のみ。route-cli / route-mcp は `npm run seed` で補充される。
+
 ### 追記の書式
 
 ```
