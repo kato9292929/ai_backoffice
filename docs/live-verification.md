@@ -65,7 +65,7 @@
 | B-0 | Settings > Approvals が出ているか（public preview 化で登録不要になったか） | ✅ 2026-10-21 | 本人のスクショで確認（下の記録） |
 | B-2 | approval_required の形 | ✅ 2026-10-24（差分あり） | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required --last=1` |
 | B-4 | update（`2026-09-30.preview`）の要求/応答、通ったパス | ✅ 2026-10-24（`/{id}` が正、`/update` は 404） | `npm run evidence -- --kind=approval_update --last=1` |
-| B-5 | webhook 7種（expired は cancel の canceled で代替） | 5種 ✅（created / approved / succeeded / canceled は配送、rejected は events API）、failed・expired 待ち | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
+| B-5 | webhook 7種（expired は cancel の canceled で代替） | 5種 ✅（created / approved / succeeded / canceled は配送、rejected は events API）。expired は expires_at 経過後も未発生（確認中）、failed 未実施 | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
 | B-6 | クレジットノートのルールで approval_required が返るか | ✅ 2026-10-25（`credit_note.create`） | `npm run propose -- --only=INQ-004` |
 | B-7 | デフォルトルールの実際の中身 | ✅ 2026-10-21 / 更新 2026-10-24（アカウントにより2件または3件） | 本人のスクショで確認（下の記録） |
 | B-9 | Block 時のエラーの形 | ✅ 2026-10-25（403 `action_blocked`） | `npm run demo:runaway -- --count=5 --interval=10 --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
@@ -310,6 +310,14 @@ HTTP 403
 
 - MCP 経路で起案し MCP で理由文を付けた承認リクエストも、承認後は直接 API 経路と同じく Stripe が実行する（経路による差なし）。
 - sandbox のテストデータの消費のみ。route-cli / route-mcp は `npm run seed` で補充される。
+
+### 2026-10-28 14:25 UTC — expired の確認（1回目）: expires_at を過ぎても失効しない
+
+- INQ-003 の承認待ち（apreq_test_61VeZ35l…、`expires_at: 2026-10-28T14:11:07Z`）を、期限の約14分後に agent key で取得
+  → **`status: requires_review` のまま**（status_transitions null、review null）。
+- `GET /v2/core/events` に `v2.core.approval_request.expired` は**出ていない**。
+- 解釈の候補: (a) 失効処理がバッチで遅れて走る、(b) `expires_at`（作成+24時間）の値と実際の失効（ガイドの14日）が一致していない。
+  → 2026-10-28 20:30 UTC に再確認。それでも失効していなければ、ガイドの14日（2026-11-10 14:11 UTC 頃）で再確認する。
 
 ### 追記の書式
 
