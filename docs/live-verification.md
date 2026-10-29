@@ -65,7 +65,7 @@
 | B-0 | Settings > Approvals が出ているか（public preview 化で登録不要になったか） | ✅ 2026-10-21 | 本人のスクショで確認（下の記録） |
 | B-2 | approval_required の形 | ✅ 2026-10-24（差分あり） | `npm run propose -- --only=INQ-001` → `npm run evidence -- --outcome=approval_required --last=1` |
 | B-4 | update（`2026-09-30.preview`）の要求/応答、通ったパス | ✅ 2026-10-24（`/{id}` が正、`/update` は 404） | `npm run evidence -- --kind=approval_update --last=1` |
-| B-5 | webhook 7種（expired は cancel の canceled で代替） | 5種 ✅（created / approved / succeeded / canceled は配送、rejected は events API）。expired は expires_at 経過後も未発生（確認中）、failed 未実施 | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
+| B-5 | webhook 7種（expired は cancel の canceled で代替） | 6種 ✅（created / approved / succeeded / canceled は配送、rejected / failed は events API）。expired は expires_at 経過後も未発生（11/10 に再確認） | `npm run webhook` + `stripe listen` の状態で承認・却下・`npm run approvals:cancel` |
 | B-6 | クレジットノートのルールで approval_required が返るか | ✅ 2026-10-25（`credit_note.create`） | `npm run propose -- --only=INQ-004` |
 | B-7 | デフォルトルールの実際の中身 | ✅ 2026-10-21 / 更新 2026-10-24（アカウントにより2件または3件） | 本人のスクショで確認（下の記録） |
 | B-9 | Block 時のエラーの形 | ✅ 2026-10-25（403 `action_blocked`） | `npm run demo:runaway -- --count=5 --interval=10 --rule-set=block` → `npm run evidence -- --outcome=blocked`（未分類なら `--outcome=error`） |
@@ -392,12 +392,51 @@ HTTP 403
   （API リファレンスの action enum にはこの値も無い。`credit_note.create` と同じくリファレンス側の記載漏れ）
 - `GET /v2/core/approval_requests?status=requires_review` の status 絞り込みはライブで効く。
 
+#### 2026-10-29 12:25〜12:27 UTC — 本人の承認・却下の結果 ✅
+
+本人が Requests 画面で操作（「Needs your review」に INQ-003 だけが残った状態を本人のスクショで確認）。
+webhook パイプラインはコンテナ再起動で止まっていたため配送は受けておらず、`GET /v2/core/events` と agent key の一覧で照合し
+`npm run reconcile` で監査ログへ反映。
+
+| 起案根拠 | 操作 | イベント（GET /v2/core/events） | 最終状態 / 結果 |
+|---|---|---|---|
+| FAILED-PROBE | 承認 | `approved` 12:26:50.676 → **`failed` 12:26:51.292** | **failed** |
+| DELIVERY-EMPTY | 却下 | `rejected` 12:26:41 | rejected（返金なし） |
+| DELIVERY-500 | 承認 | `approved` 12:26:25 → `succeeded` 12:26:26 | refund re_3UVqLy…NFAzp0 |
+| DELIVERY-503 | 承認 | `approved` 12:26:18 → `succeeded` 12:26:19 | refund re_3UVqLz…AQX8k7A |
+| DELIVERY-TIMEOUT | 承認 | `approved` 12:26:10 → `succeeded` 12:26:11 | refund re_3UVqM0…McCvHyl |
+| COMP-CN | 承認 | `approved` 12:26:01 → `succeeded` 12:26:03 | credit_note cn_1UVsP8…ggx1 |
+| COMP-BAL | 承認 | `approved` 12:25:44 → `succeeded` 12:25:44 | customer_balance_transaction cbtxn_1UVsOq…gHNl |
+
+**M12-1 failed の生レスポンス**（agent key で `GET /v2/core/approval_requests/apreq_test_61VfEJUH…T4C`、抜粋）:
+
+```json
+{
+  "action": "refund.create",
+  "status": "failed",
+  "review": { "result": "approved" },
+  "status_details": {
+    "failed": {
+      "error_code": "charge_already_refunded",
+      "error_message": "Charge ch_3UVqLwGgCiOvNoWx0ndrfexG has already been refunded.",
+      "error_type": "invalid_request_error"
+    }
+  }
+}
+```
+
+- **失敗理由の場所と形**: `status_details.failed.{error_code, error_message, error_type}`。中身は、同じ操作を直接 API で叩いたときの
+  Stripe のエラー（`charge_already_refunded`）そのもの。API リファレンスにある deprecated の `status_details.execution_failed.{code,message,type}`
+  とはキー名が違う（`error_` 接頭辞付き）。webhook / reconcile は `status_details` をそのまま `failureDetails` に保存する。
+- `failed` は承認の 0.6 秒後に発行。`review.result` は `approved` のまま残る（承認された事実と実行失敗が別に記録される）。
+- これで B-5 の7種のうち **expired 以外の6種**（created / approved / rejected / canceled / succeeded / failed）を確認。
+
 #### 想定どおりだった点 / 違った点（M12 起案段階）
 
 - 想定どおり: 納品失敗の判定（4種）と delivered の除外、分岐（card / durable / ephemeral+登録あり → 返金、ephemeral+登録なし → 請求書あり=クレジットノート / なし=顧客残高）、
   別々の PaymentIntent ならシナリオごとに承認待ちを並行して作れる、理由文が 1000 文字以内。
-- 違った点: 対象 charge が secret key で返金済みになっても、agent の承認待ちは取り消されず `requires_review` のまま残る
-  （承認時に初めて失敗するかを確認中）。顧客残高はルールが無いと agent key でも即時実行される（ドキュメントどおりだが、デフォルトルールには含まれない）。
+- 違った点: 対象 charge が secret key で返金済みになっても、agent の承認待ちは取り消されず `requires_review` のまま残る。
+  承認時点で拒否されることもなく、**承認 → 実行 → failed** になった（承認者は対象がもう返金済みかを画面上で知らされない）。顧客残高はルールが無いと agent key でも即時実行される（ドキュメントどおりだが、デフォルトルールには含まれない）。
 
 ### 追記の書式
 
