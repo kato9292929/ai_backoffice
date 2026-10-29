@@ -325,6 +325,74 @@ HTTP 403
 - → 「作成+24時間」の `expires_at` は実際の失効時刻ではない可能性が高い。ガイドの14日（2026-11-10 14:11 UTC 頃）で再確認する。
 - README の「承認期限は24時間」は、`expires_at` の値の観測としては正しいが、**期限を過ぎても承認待ちのまま残る**ことを併記する。
 
+### 2026-10-29 10:14 UTC — M12（failed の再現 / 納品失敗からの返金起案 / 補償手段の分岐）
+
+承認待ちを全シナリオ分作った段階の記録。承認・却下の結果は本人の操作後に追記する。
+
+#### M12-1 failed の再現（承認待ち、本人の承認待ち）
+
+`npm run demo:failed`（専用 charge `failed-probe` ¥2,000、ch_3UVqLw…ndrfexG）:
+
+1. agent key で全額返金を起案 → HTTP 403 approval_required → 理由文を付与。FAILED-PROBE = apreq_test_61VfEJUH…T4C（`requires_review`）。
+2. 承認待ちの間に **secret key で同じ charge を直接全額返金** → re_3UVqLw…dlvXFcx `succeeded`（承認なしで即時実行。ルールは agent key にしか掛からない）。
+3. 直後と5秒後に approval request を取得 → **`requires_review` のまま**（status_transitions null、status_details `{}`）。
+   - 想定と違う可能性の1つだった「対象が返金済みになったら承認待ちが自動で取り消される」は**起きない**。
+4. 本人の承認後に、最終状態・`failed` イベント・`status_details` の失敗理由を追記する。
+
+#### M12-2 納品失敗の記録から返金を起案 ✅（起案まで）
+
+`npm run demo:delivery`。ローカルの売り手モック（`src/delivery/seller-mock.ts`）を実際に呼び、`logs/delivery.jsonl` に記録:
+
+| purchase | PaymentIntent | 金額 | payer_wallet | request_url | HTTP | outcome | 判定 → 起案 |
+|---|---|---|---|---|---|---|---|
+| DELIVERY-OK | pi_…C5JXo0 | ¥500 | card | /v1/data/fx-rates | 200 | delivered | **起案しない** ✅ |
+| DELIVERY-EMPTY | pi_…8QXtqe | ¥800 | card | /v1/data/market-depth | 200（空） | empty | 返金 → apreq_test_61VfEJm8…NfU |
+| DELIVERY-500 | pi_…lCHdqy | ¥1,000 | durable | /v1/data/news-sentiment | 500 | server_error | 返金 → apreq_test_61VfEJoy…Suu |
+| DELIVERY-503 | pi_…94MBYc | ¥1,200 | ephemeral（返金先登録あり） | /v1/data/weather-hourly | 503 | server_error | 返金 → apreq_test_61VfEJpl…Agq |
+| DELIVERY-TIMEOUT | pi_…zE6d6X | ¥1,500 | card | /v1/data/shipping-eta | null | timeout（2秒） | 返金 → apreq_test_61VfEJtR…6bY |
+
+- 4件とも `refund.create` / rule `Refund created` / `requires_review`。webhook の `created` も4件記録。
+- 理由文は固定書式で 404〜474 文字（上限 1000 以内）。例（DELIVERY-503、顧客 ID は伏字）:
+
+```
+【AIバックオフィス 起案理由（納品失敗）】
+起案根拠: DELIVERY-503 納品失敗
+対象顧客: cus_…Gv9D
+支払い: pi_3UVqLzGgCiOvNoWx0E94MBYc（¥1,200、card_sandbox）
+購入対象: https://seller.example/v1/data/weather-hourly
+応答: HTTP 503
+判定: server_error（サーバーエラー）
+支払い日時: 2026-10-29T10:14:39.000Z / 応答日時: 2026-10-29T10:15:09.012Z
+支払い元: ephemeral / 返金先登録: あり
+補償手段: 返金 — 支払い元は ephemeral だが返金先が登録済み（wallet:base:0x4b1f…durable-demo）
+対象オブジェクト: ch_3UVqLzGgCiOvNoWx0XNndYd7
+起案者: ai-backoffice-agent (agent-tagged key / test mode)
+```
+
+- 納品記録は支払いの種類に依存しない形（`payment_rail: card_sandbox`。x402 では `x402` にして PaymentIntent を差し替える）。
+
+#### M12-3 返金先と補償手段の分岐
+
+`npm run refund-dest -- --customer=hayashi --value=wallet:base:0x4b1f…durable-demo` で返金先を登録（Customer metadata `refund_destination`）。
+→ DELIVERY-503（ephemeral）は**返金**に分岐（上表）。`npm run demo:compensate`:
+
+| purchase | 顧客 | payer_wallet | 返金先 | 請求書 | 分岐 | 結果 |
+|---|---|---|---|---|---|---|
+| COMP-CN | sato | ephemeral | なし | open 請求書 in_1UVB6g…（¥30,000） | **クレジットノート** ¥900 | ✅ approval_required → apreq_test_61VfEJzM…OIq（`credit_note.create`、rule `Credit note is created`） |
+| COMP-BAL | mori | ephemeral | なし | なし | **顧客残高** ¥700 | ⚠ **承認なしで即時実行**（HTTP 200、cbtxn_1UVqMf…qvBD、amount -700、Request-Id `req_HpHvSit3UCQek7`） |
+
+- COMP-BAL: 「Customer balance transaction is created」のルールが無いため、agent key でもそのまま実行された（`rule_not_enforced`）。
+  キーに書き込み権限はあった（403 にならなかった）。→ **ルール作成を本人に依頼**。
+- 即時に付与された ¥700 は、二重補償を避けるため secret key で +700 の残高取引を作って戻した（cbtxn_1UVqMx…AWJ8U、残高 0）。
+  ルール作成後に `npm run demo:compensate -- --only=COMP-BAL` で起案し直す。
+
+#### 想定どおりだった点 / 違った点（M12 起案段階）
+
+- 想定どおり: 納品失敗の判定（4種）と delivered の除外、分岐（card / durable / ephemeral+登録あり → 返金、ephemeral+登録なし → 請求書あり=クレジットノート / なし=顧客残高）、
+  別々の PaymentIntent ならシナリオごとに承認待ちを並行して作れる、理由文が 1000 文字以内。
+- 違った点: 対象 charge が secret key で返金済みになっても、agent の承認待ちは取り消されず `requires_review` のまま残る
+  （承認時に初めて失敗するかを確認中）。顧客残高はルールが無いと agent key でも即時実行される（ドキュメントどおりだが、デフォルトルールには含まれない）。
+
 ### 追記の書式
 
 ```

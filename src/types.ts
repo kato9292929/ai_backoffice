@@ -103,6 +103,8 @@ export interface AuditRecord {
   /** Object Stripe created when it executed the approved action (from the
    * approval request's status_details on `succeeded`). */
   resultObject?: { id: string; object: string };
+  /** Raw status_details of a `failed` request (M12-1; shape undocumented). */
+  failureDetails?: unknown;
   /** State transitions appended as webhook events land. */
   events: Array<{
     receivedAt: string;

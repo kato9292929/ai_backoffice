@@ -9,7 +9,7 @@ import {
   parseApprovalRequired,
   updateApprovalRequest,
 } from '../stripe-client.js';
-import type { ApprovalRequestRef, AuditRecord, Inquiry, Route } from '../types.js';
+import type { ActionPlan, ApprovalRequestRef, AuditRecord, Inquiry, Route } from '../types.js';
 import { plan } from './planner.js';
 import { buildJustification } from './justification.js';
 import { execute } from './execute.js';
@@ -65,6 +65,7 @@ export interface ProposeOutcome {
     | 'auto_executed'
     | 'rule_not_enforced'
     | 'blocked'
+    | 'duplicate_pending'
     | 'error';
   approvalRequestId?: string;
   dashboardUrl?: string;
@@ -133,6 +134,22 @@ export async function proposeForInquiry(
   log.section(`${inquiry.id} — 起案`);
   const actionPlan = plan(inquiry, manifest);
   const justification = buildJustification(inquiry, actionPlan);
+  return proposePlan(inquiry.id, actionPlan, justification, ctx);
+}
+
+/**
+ * Execute an already-decided plan with the agent key and handle the answer
+ * (approval_required → attach reason, executed, blocked, duplicate, error),
+ * recording both logs. Shared by the inquiry flow and the M12 delivery /
+ * compensation flows, which build their own plans and justifications.
+ */
+export async function proposePlan(
+  scenarioId: string,
+  actionPlan: ActionPlan,
+  justification: string,
+  ctx: ProposeContext = { runId: newRunId('propose'), route: 'cli' },
+): Promise<ProposeOutcome> {
+  const inquiry = { id: scenarioId };
   log.info(
     `plan: ${actionPlan.action} target=${actionPlan.targetId}` +
       (actionPlan.amount !== undefined ? ` amount=${actionPlan.amount}` : ''),
@@ -245,7 +262,14 @@ export async function proposeForInquiry(
       return done('blocked');
     }
 
-    // Path D: anything else — raw body is in logs/requests.jsonl.
+    // Path D: an approval request is already pending for this PaymentIntent.
+    case 'duplicate_pending': {
+      log.warn(`${inquiry.id} 同じ対象に承認待ちが既にある（HTTP ${response.status}）— 新しい承認リクエストは作られない`);
+      appendAudit({ ...base, finalResult: 'failed' });
+      return done('duplicate_pending');
+    }
+
+    // Path E: anything else — raw body is in logs/requests.jsonl.
     default: {
       log.error(
         `${inquiry.id} Stripe error HTTP ${response.status}`,

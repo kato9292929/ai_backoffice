@@ -54,6 +54,7 @@ async function main(): Promise<void> {
       events,
       finalResult: final ?? rec.finalResult,
       ...(result?.id ? { resultObject: { id: result.id, object: result.object } } : {}),
+      ...(r.status === 'failed' ? { failureDetails: r.status_details ?? null } : {}),
     };
     appendAudit(next);
     updated++;

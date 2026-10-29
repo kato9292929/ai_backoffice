@@ -95,9 +95,10 @@ CC の担当は**設定内容を確定して提示すること**まで。以下�
 
 ---
 
-## ルール4（任意）: 顧客残高取引の作成（Customer balance transaction is created）
+## ルール4: 顧客残高取引の作成（Customer balance transaction is created）
 
-INQ-007 を有効化するとき（`ENABLE_BALANCE_COMPENSATION=true` / `--with-balance`）だけ必要。
+M12-3（顧客残高による補償）と INQ-007 で必要。**デフォルトルールには無い**ため、作らないと agent key でも
+承認なしで即時実行される（2026-10-29 にライブで確認）。
 
 | 項目 | 内容 |
 |---|---|
@@ -175,7 +176,7 @@ npm run demo:runaway -- --count=5 --interval=10 --amount=1500 --rule-set=approva
 - [ ] ルール2（クレジットノート）を作成し**有効化**
 - [ ] M9 用の Block 版ルールを作成し、**保存のみ（無効）**にしてある（M9 実行時に切り替え）
 - [ ] 全ルールで Designated reviewers を**個人**で指定した
-- [ ] （INQ-007 を使う場合のみ）ルール4を作成し有効化
+- [ ] ルール4（顧客残高）を作成し有効化（M12-3 / INQ-007）
 
 > ルールが無効・未設定のまま起案すると、gated アクションが素通りし、ログに
 > `rule_not_enforced` の警告が出る（＝迂回ではなく検知される）。

@@ -126,6 +126,15 @@ async function handleEvent(evt: any): Promise<void> {
     events,
     finalResult: finalResult ?? prior.finalResult,
   };
+  if (status === 'failed') {
+    try {
+      const resp = await retrieveApprovalRequest(approvalId);
+      next.failureDetails = resp.ok ? resp.body?.status_details ?? null : { retrieveStatus: resp.status, body: resp.body };
+      log.warn(`${prior.fixtureId} execution failed`, JSON.stringify(next.failureDetails));
+    } catch (err) {
+      log.warn(`retrieve ${approvalId} error`, err instanceof Error ? err.message : String(err));
+    }
+  }
   if (status === 'succeeded') {
     const result = await fetchResultObject(approvalId);
     if (result) {

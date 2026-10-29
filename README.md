@@ -201,6 +201,10 @@ npm run demo              # seed → 起案 → 承認待ち → 反映 まで�
 | `npm run approvals:cancel` | 承認待ちの approval request を取消（`-- <apreq_id>` または `--fixture=RUNAWAY#4`）。B-5 の canceled 確認用 |
 | `npm run audit` | 監査ログを表形式で表示（`-- --json` で生JSON） |
 | `npm run evidence` | `logs/requests.jsonl` の生レスポンスを伏字にして Markdown で出力（`-- --run=… --outcome=blocked --kind=approval_update --last=N`） |
+| `npm run demo:failed` | M12-1: `failed` の再現（agent の返金を承認待ちにし、その間に secret key で同じ charge を返金） |
+| `npm run demo:delivery` | M12-2: 売り手モック起動 → 購入5件 → 納品記録（`logs/delivery.jsonl`）→ 判定 → 納品失敗分を返金起案（`-- --only=…`） |
+| `npm run demo:compensate` | M12-3: ephemeral・返金先なしの2件を、請求書の有無でクレジットノート / 顧客残高に分岐して起案（`-- --only=COMP-BAL`） |
+| `npm run refund-dest` | 顧客の返金先を登録（`-- --customer=<handle\|cus_id> --value=<返金先>`、空で削除） |
 | `npm run x402:check` | M11: machine payments（x402）が使えるかの確認（`-- --probe-deposit-address` で deposit address の作成も試す） |
 | `npm run typecheck` | 型チェック |
 
@@ -288,6 +292,9 @@ HTTP ステータス/エラー本文をそのまま記録する。結果は
 | ~~B-4~~ | 理由文 update → `POST /v2/core/approval_requests/{id}` が 200、`/update` は 404。`2026-09-30.preview` で通る | 同上 |
 | ~~B-6~~ | クレジットノートのルール → approval_required が返る（action `credit_note.create`）。キーに Credit Notes Write が必要 | ライブ（`docs/live-verification.md`） |
 | ~~B-9~~ | Block 時のエラー → HTTP 403、`error.code = action_blocked`（id は返らない）。approval request は `rejected`・`review: null` で残るが、webhook イベントは出ない。rate limit 条件の画面名は「Number of requests exceeds」 | ライブ（`docs/live-verification.md`） |
+| M12-1 | failed の再現: 承認待ちの間に secret key で同じ charge を全額返金 → 承認待ちは取り消されず残る。承認後の `failed` と失敗理由は確認中 | ライブ（`docs/live-verification.md`、2026-10-29） |
+| M12-2 | 納品失敗（empty / 500 / 503 / timeout）4件を返金起案、delivered は起案しない。理由文は固定書式・1000文字以内 | 同上（承認・却下の結果は確認中） |
+| M12-3 | 分岐: ephemeral+返金先なし → 請求書あり=クレジットノート（承認待ち）/ 請求書なし=顧客残高（ルール未作成のため即時実行 → 戻して再起案予定） | 同上 |
 | ~~B-0~~ | Settings > Approvals が出るか → **出る**（2026-10-21、sandbox） | 本人のスクショ（`docs/live-verification.md`） |
 | ~~B-7~~ | デフォルトルールの中身 → **返金の作成・サブスクの解約の2件のみ**（Actor = Agent key、Submit for approval、レビュアーはロール指定） | 同上。ライブ確認 |
 | ~~旧 B-7~~ | 請求書作成が agent-key デフォルトルールの対象か → **対象外**（同上） | 同上 |

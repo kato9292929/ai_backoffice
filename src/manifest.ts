@@ -84,7 +84,8 @@ export function chargeForCustomer(
     (x) =>
       x.customerHandle === customerHandle &&
       x.handle !== POOL_CHARGE_HANDLE &&
-      !Object.values(ROUTE_CHARGE_HANDLES).includes(x.handle as 'route-cli'),
+      !Object.values(ROUTE_CHARGE_HANDLES).includes(x.handle as 'route-cli') &&
+      !/^(purchase|failed)-/.test(x.handle),
   );
   if (!ch)
     throw new Error(`no seeded charge for customer handle "${customerHandle}"`);

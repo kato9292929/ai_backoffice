@@ -56,6 +56,12 @@ const CUSTOMERS = [
   { handle: 'yamada', name: '山田 花子', email: 'yamada@example.jp', dept: '営業部', region: '大阪' },
   { handle: 'suzuki', name: '鈴木 一郎', email: 'suzuki@example.jp', dept: '管理部', region: '福岡' },
   { handle: 'sato', name: '佐藤 美咲', email: 'sato@example.jp', dept: '技術部', region: '北海道' },
+  // M12: buyers of the mock paid-data API. kimura pays by card/durable wallet,
+  // hayashi from an ephemeral wallet but with a registered refund destination,
+  // mori from an ephemeral wallet with no destination and no invoices.
+  { handle: 'kimura', name: '木村 健', email: 'kimura@example.jp', dept: '開発部', region: '東京' },
+  { handle: 'hayashi', name: '林 葵', email: 'hayashi@example.jp', dept: '開発部', region: '大阪' },
+  { handle: 'mori', name: '森 翔', email: 'mori@example.jp', dept: '開発部', region: '名古屋' },
 ] as const;
 
 const PRICES = [
@@ -83,6 +89,17 @@ const CHARGES = [
   // M10: one charge per route (only one pending approval request per PaymentIntent).
   { handle: 'route-cli', customerHandle: 'yamada', amount: 5000, minRemaining: 5000, note: 'M10 経路比較（CLI 経路の返金対象）' },
   { handle: 'route-mcp', customerHandle: 'yamada', amount: 5000, minRemaining: 5000, note: 'M10 経路比較（MCP 経路の返金対象）' },
+  // M12-1: refunded directly by the secret key while the agent's refund waits
+  // for approval, so the approved refund fails on execution.
+  { handle: 'failed-probe', customerHandle: 'kimura', amount: 2000, minRemaining: 2000, note: 'M12-1 failed 再現用' },
+  // M12-2 / M12-3: one purchase of the mock paid-data API per charge.
+  { handle: 'purchase-ok', customerHandle: 'kimura', amount: 500, minRemaining: 500, note: 'M12 購入: 正常納品' },
+  { handle: 'purchase-empty', customerHandle: 'kimura', amount: 800, minRemaining: 800, note: 'M12 購入: 空の応答' },
+  { handle: 'purchase-500', customerHandle: 'kimura', amount: 1000, minRemaining: 1000, note: 'M12 購入: 500' },
+  { handle: 'purchase-503', customerHandle: 'hayashi', amount: 1200, minRemaining: 1200, note: 'M12 購入: 503' },
+  { handle: 'purchase-timeout', customerHandle: 'kimura', amount: 1500, minRemaining: 1500, note: 'M12 購入: タイムアウト' },
+  { handle: 'purchase-cn', customerHandle: 'sato', amount: 900, minRemaining: 900, note: 'M12-3 購入: ephemeral・請求書あり' },
+  { handle: 'purchase-bal', customerHandle: 'mori', amount: 700, minRemaining: 700, note: 'M12-3 購入: ephemeral・請求書なし' },
 ] as const;
 
 // Finalized (open) invoices a credit note is issued against (M8, INQ-004).
