@@ -386,6 +386,12 @@ HTTP 403
 - 即時に付与された ¥700 は、二重補償を避けるため secret key で +700 の残高取引を作って戻した（cbtxn_1UVqMx…AWJ8U、残高 0）。
   ルール作成後に `npm run demo:compensate -- --only=COMP-BAL` で起案し直す。
 
+- 2026-10-29 12:20 UTC: 本人が「Customer balance transaction is created」（Actor = Agent key、Submit for approval、レビュアー本人）を Activate。
+  `npm run demo:compensate -- --only=COMP-BAL` で起案し直し → **HTTP 403 approval_required** → COMP-BAL = apreq_test_61VfGGr8…U24、
+  **`action: "customer_balance_transaction.create"`**、rule `Customer balance transaction is created`、`requires_review`。
+  （API リファレンスの action enum にはこの値も無い。`credit_note.create` と同じくリファレンス側の記載漏れ）
+- `GET /v2/core/approval_requests?status=requires_review` の status 絞り込みはライブで効く。
+
 #### 想定どおりだった点 / 違った点（M12 起案段階）
 
 - 想定どおり: 納品失敗の判定（4種）と delivered の除外、分岐（card / durable / ephemeral+登録あり → 返金、ephemeral+登録なし → 請求書あり=クレジットノート / なし=顧客残高）、
